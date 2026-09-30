@@ -1,10 +1,13 @@
+import type { Metadata } from "next"
+import { BrandScope } from "@/components/brand"
+import { getCustomerBrand } from "@/lib/white-label"
 import { requireContext } from "@/lib/context"
 import { Sidebar } from "@/components/sidebar"
 import { SignOut } from "@/components/sign-out"
 import { Logo, LogoMark } from "@/components/logo"
 import { product } from "@/product.config"
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
+async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireContext()
   const items = [
     { href: "/", label: "Overview" },
@@ -36,4 +39,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </main>
     </div>
   )
+}
+
+/** White-label customers see their own brand; everyone else, standard AXXES. */
+export default async function BrandedLayout(props: Parameters<typeof AppLayout>[0]) {
+  const ctx = await requireContext()
+  const brand = ctx ? await getCustomerBrand(ctx.tenant.id) : null
+  return <BrandScope brand={brand}>{await AppLayout(props)}</BrandScope>
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const ctx = await requireContext()
+  const brand = ctx ? await getCustomerBrand(ctx.tenant.id) : null
+  return brand?.faviconUrl ? { icons: { icon: brand.faviconUrl } } : {}
 }
