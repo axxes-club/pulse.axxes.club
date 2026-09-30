@@ -15,3 +15,12 @@ export function Logo({ size = "md" }: { size?: "md" | "lg" }) {
     </div>
   )
 }
+
+/** Just the badge, for the collapsed rail where the wordmark has no room. */
+export function LogoMark() {
+  return (
+    <span className="mx-auto grid size-7 place-items-center rounded-lg bg-accent font-mono text-sm font-bold text-accent-ink">
+      {product.name[0]}
+    </span>
+  )
+}
