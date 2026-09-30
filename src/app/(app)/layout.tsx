@@ -1,7 +1,7 @@
 import { requireContext } from "@/lib/context"
 import { Sidebar } from "@/components/sidebar"
 import { SignOut } from "@/components/sign-out"
-import { Logo } from "@/components/logo"
+import { Logo, LogoMark } from "@/components/logo"
 import { product } from "@/product.config"
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -17,6 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Sidebar
         items={items}
         logo={<Logo />}
+        mark={<LogoMark />}
         footer={
           <div className="space-y-3 text-xs">
             <div>
