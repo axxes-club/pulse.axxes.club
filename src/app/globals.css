@@ -40,3 +40,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-sans);
 @utility btn-ghost { @apply btn border border-line text-text hover:bg-panel-2; }
 @utility btn-danger { @apply btn border border-danger/40 text-danger hover:bg-danger/10; }
 @utility card { @apply rounded-2xl border border-line bg-panel; }
+
+/* Keep the organization control reachable when the desktop rail is collapsed. */
+@media (min-width: 1024px) {
+  aside[data-collapsed="true"] .org-details, .org-switcher[data-compact="true"] .org-details { display: none; }
+  aside[data-collapsed="true"] .org-monogram, .org-switcher[data-compact="true"] .org-monogram { display: grid; }
+  aside[data-collapsed="true"] .org-trigger, .org-switcher[data-compact="true"] .org-trigger { justify-content: center; border: 0; padding: 0; }
+}
