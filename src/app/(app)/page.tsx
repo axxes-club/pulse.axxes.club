@@ -51,16 +51,16 @@ export default async function PulsePage() {
       <h2 className="mb-3 mt-10 font-mono text-[11px] uppercase tracking-[0.15em] text-muted">Audience</h2>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Contacts" value={v.contacts.toLocaleString()} hint={`+${v.newContacts} in 30 days`} href={`${PORTAL}/crm`} />
-        <Stat label="Emails sent" value={v.emailsSent.toLocaleString()} hint="Campaigns, last 60 days" href="https://signalaxxesclub.vercel.app" />
+        <Stat label="Emails sent" value={v.emailsSent.toLocaleString()} hint="Campaigns, last 60 days" href={`${PORTAL}/newsletter/campaigns`} />
         <Stat label="Open rate" value={pct(v.openRate)} hint={`Click rate ${pct(v.clickRate)}`} />
-        <Stat label="Social posts" value={v.published} hint={`${v.scheduled} scheduled`} href="https://echoaxxesclub.vercel.app" />
+        <Stat label="Social posts" value={v.published} hint={`${v.scheduled} scheduled`} href={`${PORTAL}/social/posts`} />
       </div>
 
       <h2 className="mb-3 mt-10 font-mono text-[11px] uppercase tracking-[0.15em] text-muted">Operations</h2>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Upcoming events" value={v.upcoming} hint="Published" href={`${PORTAL}/events`} />
-        <Stat label="Active products" value={v.activeProducts} href="https://bazaaraxxesclub.vercel.app" />
-        <Stat label="Low stock" value={v.lowStock} hint="At or below threshold" href="https://manifestaxxesclub.vercel.app" />
+        <Stat label="Active products" value={v.activeProducts} />
+        <Stat label="Low stock" value={v.lowStock} hint="At or below threshold" href="https://manifest.axxes.club" />
         <Stat label="Active projects" value={v.projects} href={`${PORTAL}/projects`} />
       </div>
     </>
