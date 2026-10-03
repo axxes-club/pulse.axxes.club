@@ -20,6 +20,7 @@ const event = z
       .string()
       .regex(/^[a-zA-Z0-9_-]{1,100}$/)
       .optional(),
+    anonymousVisitorId: z.string().regex(/^[a-f0-9]{32}$/).optional(),
     sessionId: z
       .string()
       .regex(/^[a-zA-Z0-9_-]{1,100}$/)

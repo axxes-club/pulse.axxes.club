@@ -55,6 +55,8 @@ export async function persistBatch(
     if (rate.rows[0].count > 300)
       throw new AnalyticsError("Collection rate exceeded; retry later", 429);
     for (const event of batch.events) {
+      if(event.anonymousVisitorId&&(!trusted||site.collection!=='server'))throw new AnalyticsError('Anonymous visitor hashes require scoped server credentials',403);
+      if(event.anonymousVisitorId&&(site.identityMode!=='ephemeral'||event.visitorId||event.sessionId))throw new AnalyticsError('Anonymous visitor hashes require ephemeral identity without explicit visitor or session IDs');
       if (
         !trusted &&
         ["purchase", "revenue", "payment_captured"].includes(event.name)
@@ -83,7 +85,9 @@ export async function persistBatch(
         throw new AnalyticsError(
           "Persistent identity is not enabled for this app",
         );
-      const eventVisitor = event.visitorId
+      const eventVisitor = event.anonymousVisitorId
+        ? visitorKey(secret,site.id,event.anonymousVisitorId,'anonymous-server',rotation)
+        : event.visitorId
         ? visitorKey(
             secret,
             site.id,
@@ -97,7 +101,7 @@ export async function persistBatch(
         : visitorKey(
             secret,
             site.id,
-            trusted ? event.id : visitor,
+            event.anonymousVisitorId ? eventVisitor : trusted ? event.id : visitor,
             String(Math.floor(Date.parse(event.timestamp) / 1800000)),
             rotation,
           );
