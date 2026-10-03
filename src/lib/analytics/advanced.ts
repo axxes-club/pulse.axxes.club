@@ -28,7 +28,8 @@ export function performanceSummary(
 export function retentionCohorts(
   events: AnalyticsEvent[],
   mode: "ephemeral" | "persistent",
-): Array<{ day: string; size: number; retained: number[] }> {
+  now = new Date(),
+): Array<{ day: string; size: number; retained: Array<number|null> }> {
   if (mode !== "persistent") return [];
   const visits = new Map<string, Set<string>>();
   for (const e of events) {
@@ -39,7 +40,7 @@ export function retentionCohorts(
   }
   const cohorts = new Map<
     string,
-    { day: string; size: number; retained: number[] }
+    { day: string; size: number; retained: Array<number|null> }
   >();
   for (const days of visits.values()) {
     const first = [...days].sort()[0];
@@ -53,8 +54,9 @@ export function retentionCohorts(
       const day = new Date(Date.parse(first + "T00:00:00Z") + offset * 86400000)
         .toISOString()
         .slice(0, 10);
-      if (days.has(day)) c.retained[offset]++;
+      if (days.has(day)) c.retained[offset]=(c.retained[offset] || 0)+1;
     }
+    for(let i=0;i<7;i++){if(Date.parse(first+"T00:00:00Z")+(i+1)*86400000>now.getTime())c.retained[i]=null;}
     cohorts.set(first, c);
   }
   return [...cohorts.values()].sort((a, b) => a.day.localeCompare(b.day));

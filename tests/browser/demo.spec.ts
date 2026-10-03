@@ -46,3 +46,4 @@ test("mobile reporting has no page overflow and opens accessible navigation", as
     ),
   ).toBeTruthy();
 });
+test('chart exposes keyboard values and a data table',async({page})=>{await page.goto('/demo');const point=page.locator('.chart-hit-zones button').first();await point.focus();await expect(page.locator('.chart-tooltip')).toBeVisible();await page.getByText('View chart data',{exact:true}).click();await expect(page.locator('.chart-data table')).toBeVisible();await expect(page.locator('.chart-data tbody tr')).toHaveCount(7)});

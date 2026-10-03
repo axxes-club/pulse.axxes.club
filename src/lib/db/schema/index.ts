@@ -57,3 +57,5 @@ export * from "./integrations"
 
 // Projects (Kanban)
 export * from "./projects"
+// Pulse organization metadata (event storage lives in an isolated database)
+export * from "./pulse"

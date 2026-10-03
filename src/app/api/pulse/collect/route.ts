@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       ip:
         request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
         "unknown",
+      country: /^[A-Z]{2}$/.test(request.headers.get("x-pulse-country") || "") ? new Intl.DisplayNames(["en"],{type:"region"}).of(request.headers.get("x-pulse-country")!) || "Unknown" : "Unknown",
       userAgent: request.headers.get("user-agent") || "",
     });
     return Response.json(result, {

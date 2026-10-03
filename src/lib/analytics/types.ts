@@ -18,7 +18,7 @@ export type AnalyticsReport = {
     "LCP" | "INP" | "CLS",
     { p75: number | null; samples: number }
   >;
-  cohorts: Array<{ day: string; size: number; retained: number[] }>;
+  cohorts: Array<{ day: string; size: number; retained: Array<number|null> }>;
   visitors: number;
   pageviews: number;
   sessions: number;
@@ -27,11 +27,13 @@ export type AnalyticsReport = {
   series: Array<{ time: string; value: number }>;
   comparison: Array<{ time: string; value: number }>;
   sources: Breakdown[];
+  campaigns: Breakdown[];
   pages: Breakdown[];
   countries: Breakdown[];
   devices: Breakdown[];
   events: Breakdown[];
   recent: AnalyticsEvent[];
+  live: AnalyticsEvent[];
   updatedAt: string;
   previous: { visitors: number; pageviews: number; conversions: number };
 };

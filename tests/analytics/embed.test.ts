@@ -1,0 +1,3 @@
+import { expect,it } from 'vitest';
+import { parsePortalMessage } from '@/lib/analytics/embed';
+it('rejects foreign origins and unsafe navigation payloads',()=>{expect(parsePortalMessage('https://members.axxes.club',{type:'axxes:theme',theme:'light'})).toEqual({type:'axxes:theme',theme:'light'});expect(parsePortalMessage('https://attacker.com',{type:'axxes:theme',theme:'dark'})).toBe(null);expect(parsePortalMessage('https://members.axxes.club',{type:'axxes:navigate',path:'https://attacker.com'})).toBe(null);expect(parsePortalMessage('https://members.axxes.club',{type:'axxes:navigate',path:'/dashboard/events'})).toEqual({type:'axxes:navigate',path:'/dashboard/events'})});

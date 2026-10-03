@@ -32,3 +32,4 @@ it("denies disabled sites even to administrators", () => {
     ),
   ).toThrow();
 });
+it('lets administrators restore their own disabled app without granting report access',()=>{expect(authorizeSite({tenantId:'a',role:'owner'},{tenantId:'a',enabled:false},'manage')).toBe(true);expect(()=>authorizeSite({tenantId:'a',role:'member'},{tenantId:'a',enabled:false},'manage')).toThrow();expect(()=>authorizeSite({tenantId:'a',role:'owner'},{tenantId:'a',enabled:false},'read')).toThrow()});

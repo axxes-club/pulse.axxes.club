@@ -1,0 +1,5 @@
+'use client';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { parsePortalMessage,portalOrigins } from '@/lib/analytics/embed';
+export function EmbedFrame({children}:{children:React.ReactNode}){const router=useRouter();useEffect(()=>{function receive(event:MessageEvent){if(event.source!==window.parent)return;const data=parsePortalMessage(event.origin,event.data);if(!data)return;if(data.type==='axxes:theme')document.documentElement.dataset.theme=data.theme;else router.push(data.path.replace('/dashboard','/embed/overview').replace('/embed/overview/','/embed/'));}window.addEventListener('message',receive);const resize=new ResizeObserver(()=>{for(const origin of portalOrigins)window.parent.postMessage({type:'axxes:resize',height:document.documentElement.scrollHeight},origin)});resize.observe(document.body);return ()=>{window.removeEventListener('message',receive);resize.disconnect()}},[router]);return <div className='pulse-embedded'>{children}</div>}

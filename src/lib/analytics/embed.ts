@@ -1,0 +1,3 @@
+export const portalOrigins=['https://members.axxes.club','https://members.axxes.app','https://axxes.app'];
+export type PortalMessage={type:'axxes:theme';theme:'light'|'dark'}|{type:'axxes:navigate';path:string};
+export function parsePortalMessage(origin:string,data:unknown):PortalMessage|null{if(!portalOrigins.includes(origin)||!data||typeof data!=='object')return null;const d=data as Record<string,unknown>;if(d.type==='axxes:theme'&&(d.theme==='light'||d.theme==='dark'))return {type:d.type,theme:d.theme};if(d.type==='axxes:navigate'&&typeof d.path==='string'&&/^\/dashboard(?:\/[a-z]+)?(?:\?[^\\\u0000-\u001f]*)?$/.test(d.path))return {type:d.type,path:d.path};return null}

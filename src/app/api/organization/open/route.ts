@@ -9,5 +9,5 @@ export async function GET(request: Request) {
   }
   const result = await switchOrganization(tenant)
   if (result.error) return NextResponse.json({ error: result.error }, { status: result.error.includes("sign in") ? 401 : 403 })
-  return NextResponse.redirect(new URL("/", request.url))
+  return NextResponse.redirect(new URL(new URL(request.url).searchParams.get("embed") === "1" ? "/embed/overview" : "/dashboard", request.url))
 }

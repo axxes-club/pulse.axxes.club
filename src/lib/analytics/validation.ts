@@ -1,11 +1,13 @@
 import { createHmac } from "node:crypto";
+import { AnalyticsError } from "./access";
 import { z } from "zod";
 const props = z
   .record(
     z.string().max(64),
     z.union([z.string().max(256), z.number().finite(), z.boolean()]),
   )
-  .refine((p) => Object.keys(p).length <= 20, "Too many event properties");
+  .refine((p) => Object.keys(p).length <= 20, "Too many event properties")
+  .refine(p=>!Object.keys(p).some(key=>/^(password|passwd|secret|token|access_token|refresh_token|email|phone|credit_card|card_number|message_body|document_content|ip_address)$/i.test(key)),"Sensitive event properties are not allowed");
 const event = z
   .object({
     id: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
@@ -38,11 +40,11 @@ export function validateBatch(input: unknown, now = new Date()): EventBatch {
   for (const e of parsed.events) {
     const time = Date.parse(e.timestamp);
     if (time < now.getTime() - 86400000 || time > now.getTime() + 300000)
-      throw new Error("Event timestamp outside acceptance window");
+      throw new AnalyticsError("Event timestamp outside acceptance window");
     if (e.url) {
       const u = new URL(e.url);
       if (!["http:", "https:"].includes(u.protocol) || u.username || u.password)
-        throw new Error("Invalid event URL");
+        throw new AnalyticsError("Invalid event URL");
     }
   }
   return parsed;

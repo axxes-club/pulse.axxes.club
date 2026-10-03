@@ -15,6 +15,8 @@ import type {
   Breakdown,
   AnalyticsReport,
 } from "@/lib/analytics/types";
+import { completeDayRange, dateInZone, reportWindow } from "@/lib/analytics/timezone";
+import { SiteSettings } from "./site-settings";
 import { FunnelEditor } from "./funnel-editor";
 import { IntegrationWizard } from "./integration-wizard";
 const titles: Record<string, string> = {
@@ -99,6 +101,7 @@ export function ReportView({
   funnels = [],
   goalNames = [],
   canManage = false,
+  timezone = "UTC",
 }: {
   view?: string;
   demo?: boolean;
@@ -114,12 +117,14 @@ export function ReportView({
   }>;
   goalNames?: string[];
   canManage?: boolean;
+  timezone?: string;
 }) {
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
   const router = useRouter(),
     search = useSearchParams(),
     query = parseReportQuery(new URLSearchParams(search.toString()));
+  if(!search.has("timezone")) query.timezone = timezone;
   const [now] = useState(() => new Date());
   const report = useMemo(
     () => data || summarizeEvents(events, query, now),
@@ -127,6 +132,9 @@ export function ReportView({
       events,
       query.range,
       query.source,
+      query.path,
+      query.country,
+      query.timezone,
       query.metric,
       query.environment,
       data,
@@ -144,7 +152,13 @@ export function ReportView({
       { scroll: false },
     );
   };
+  useEffect(() => { if (!["realtime","overview"].includes(view) || demo) return; const timer = setInterval(() => { if(document.visibilityState === "visible") router.refresh(); },10000); return () => clearInterval(timer); },[view,demo,router]);
+  const initialWindow = reportWindow(query.range,query.timezone || timezone,now,query.from,query.to);
+  const [customFrom,setCustomFrom] = useState(query.from || dateInZone(initialWindow.start,query.timezone || timezone));
+  const [customTo,setCustomTo] = useState(query.to || dateInZone(initialWindow.end-1,query.timezone || timezone));
+  const [dateError,setDateError] = useState("");
   const [goalStatus, setGoalStatus] = useState("");
+  if (view === "settings") return <SiteSettings siteId={siteId} canManage={canManage} demo={demo}/>;
   if (view === "integrations")
     return <IntegrationWizard demo={demo} organizationKey={organizationKey} />;
   const metrics = [
@@ -218,7 +232,7 @@ export function ReportView({
             {view === "overview" && (
               <span className="live-pill">
                 <i />
-                {demo ? "Sample" : "Connected"}
+                {demo ? "Sample" : report.pageviews || report.live.length ? "Receiving data" : "Waiting for traffic"}
               </span>
             )}
           </h1>
@@ -245,44 +259,43 @@ export function ReportView({
           <select
             disabled={!ready}
             aria-label="Date range"
-            value={query.range}
-            onChange={(e) => update({ range: Number(e.target.value) })}
+            value={query.from ? "custom" : query.range}
+            onChange={(e) => update({ range: Number(e.target.value),from:"",to:"" })}
           >
+            {query.from && <option value="custom">{query.from} – {query.to}</option>}
             {[1, 7, 30, 90].map((n) => (
               <option key={n} value={n}>
                 Last {n} {n === 1 ? "day" : "days"}
               </option>
             ))}
           </select>
+          <select aria-label="Reporting timezone" value={query.timezone || "UTC"} disabled={!ready} onChange={e=>update({timezone:e.target.value})}>{Array.from(new Set([timezone,"UTC","America/Puerto_Rico","America/New_York","America/Los_Angeles","Europe/London","Asia/Tokyo"])).map(zone=><option key={zone}>{zone}</option>)}</select>
           <button className="button secondary small" onClick={exportCsv}>
             <Icon name="download" size={14} />
             Export
           </button>
         </div>
       </div>
+      <details className="integration-advanced" style={{marginBottom:18}}><summary>Choose custom dates</summary><div className="integration-form"><label>From<input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)}/></label><label>Through · complete day<input type="date" value={customTo} max={dateInZone(Date.now()-86400000,query.timezone || timezone)} onChange={e=>setCustomTo(e.target.value)}/></label></div><button className="button secondary small" onClick={()=>{const days=completeDayRange(customFrom,customTo,query.timezone || timezone);if(!days){setDateError("Choose 1–90 complete days, ending before today.");return;}setDateError("");update({from:customFrom,to:customTo,range:days})}}>Apply dates</button>{dateError&&<p role="status">{dateError}</p>}</details>
+      <p className="muted" style={{fontSize:12,marginBottom:20}}>Complete days in {query.timezone} · updated {new Date(report.updatedAt).toLocaleTimeString("en-US",{timeZone:query.timezone})}. Visitors are site-scoped estimates; conversion rate counts sessions completing a goal.</p>
       {demo && view !== "overview" && (
         <div className="demo-notice">
           Sample data · explore freely. Connect your app for real analytics.
         </div>
       )}
-      {query.source && (
+      {(query.source || query.path || query.country || query.campaign || query.device) && (
         <div className="filters-bar">
-          <button
-            className="filter-chip"
-            onClick={() => update({ source: "" })}
-          >
-            Source: {query.source}
-            <Icon name="close" size={12} />
-          </button>
+          {(["source","path","country","campaign","device"] as const).filter(key=>query[key]).map(key=><button key={key} className="filter-chip" onClick={()=>update({[key]:""})}>{key}: {query[key]}<Icon name="close" size={12}/></button>)}
           <button
             className="muted"
             style={{ fontSize: 11 }}
-            onClick={() => update({ source: "" })}
+            onClick={() => update({ source: "", path:"", country:"", campaign:"", device:"" })}
           >
             Clear filters
           </button>
         </div>
       )}
+      {view === "overview" && <section className="integration-intro" style={{marginBottom:20}}><div><h2><span className="live-dot" style={{marginRight:10}}/>{new Set(report.live.filter(e=>e.name === "pageview").map(e=>e.visitor)).size} visitors live now</h2><p>Persisted activity in the last five minutes. New traffic appears here as it arrives; complete-day totals fill in after midnight.</p></div><Link className="button secondary small" href={link("realtime")}>Open live activity →</Link></section>}
       {["overview", "acquisition", "audience", "pages"].includes(view) && (
         <>
           <section className="report-metrics">
@@ -385,16 +398,19 @@ export function ReportView({
             </div>
           </section>
           <div className="breakdown-grid">
+            {view === "acquisition" && <BreakdownCard title="Campaigns" rows={report.campaigns} href={link("acquisition")} onSelect={campaign=>update({campaign})}/>}
             {view === "audience" ? (
               <>
                 <BreakdownCard
                   title="Countries"
                   rows={report.countries}
+                  onSelect={(country)=>update({country})}
                   href={link("audience")}
                 />
                 <BreakdownCard
                   title="Devices"
                   rows={report.devices}
+                  onSelect={device=>update({device})}
                   href={link("audience")}
                   icon="layers"
                 />
@@ -416,12 +432,14 @@ export function ReportView({
                 <BreakdownCard
                   title="Pages"
                   rows={report.pages}
+                  onSelect={(path)=>update({path})}
                   href={link("pages")}
                   icon="external"
                 />
                 <BreakdownCard
                   title="Countries"
                   rows={report.countries}
+                  onSelect={(country)=>update({country})}
                   href={link("audience")}
                 />
               </>
@@ -443,7 +461,7 @@ export function ReportView({
                   ? "Repeated goal events do not inflate your conversion rate."
                   : demo
                     ? "Generated samples, not a production live feed."
-                    : "Persisted recent events from your app."}
+                    : "Persisted events in the last five minutes · refreshes every 10 seconds."}
               </p>
             </div>
             <Icon name={view === "events" ? "target" : "live"} size={30} />
@@ -461,7 +479,7 @@ export function ReportView({
               <tbody>
                 {(view === "events"
                   ? report.recent.filter((e) => e.name !== "pageview")
-                  : report.recent
+                  : report.live
                 ).map((e) => (
                   <tr key={e.id}>
                     <td>{e.name}</td>
@@ -623,7 +641,7 @@ export function ReportView({
                       <td>{c.day}</td>
                       <td>{c.size}</td>
                       {c.retained.map((value, i) => (
-                        <td key={i}>{((value / c.size) * 100).toFixed(0)}%</td>
+                        <td key={i}>{value === null ? "—" : `${((value / c.size) * 100).toFixed(0)}%`}</td>
                       ))}
                     </tr>
                   ))}

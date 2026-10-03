@@ -1,5 +1,13 @@
+import { validTimezone, completeDayRange } from "./timezone";
 export type ReportQuery = {
   range: number;
+  from?: string;
+  to?: string;
+  path?: string;
+  country?: string;
+  campaign?:string;
+  device?:string;
+  timezone?: string;
   source: string;
   metric: "visitors" | "pageviews" | "conversions";
   environment: "production" | "development";
@@ -11,8 +19,18 @@ export function parseReportQuery(
 ): ReportQuery {
   const range = Number(search.get("range") || 7);
   const metric = search.get("metric");
+  const from=search.get("from") || "", to=search.get("to") || "";
+  const timezone=validTimezone(search.get("timezone") || "UTC");
+  const customDays=completeDayRange(from,to,timezone,_now);
   return {
-    range: [1, 7, 30, 90].includes(range) ? range : 7,
+    from: customDays ? from : "",
+    to: customDays ? to : "",
+    range: customDays || ([1, 7, 30, 90].includes(range) ? range : 7),
+    path: (search.get("path") || "").slice(0,2048),
+    country: (search.get("country") || "").slice(0,100),
+    campaign:(search.get("campaign") || "").slice(0,256),
+    device:(search.get("device") || "").slice(0,100),
+    timezone,
     source: (search.get("source") || "").slice(0, 100),
     metric:
       metric === "pageviews" || metric === "conversions" ? metric : "visitors",
@@ -26,7 +44,14 @@ export function parseReportQuery(
 export function queryString(query: ReportQuery): string {
   return new URLSearchParams({
     range: String(query.range),
+    from:query.from || "",
+    to:query.to || "",
     source: query.source,
+    path: query.path || "",
+    country: query.country || "",
+    campaign:query.campaign || "",
+    device:query.device || "",
+    timezone: query.timezone || "UTC",
     metric: query.metric,
     environment: query.environment,
     compare: String(query.compare),

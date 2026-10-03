@@ -1,0 +1,17 @@
+.git
+node_modules
+.next
+.vercel
+.env*
+gha-creds-*.json
+**/.env*
+.db_url
+.mercelle
+.netlify
+coverage
+*.log
+
+.superpowers
+.tools
+test-results
+playwright-report

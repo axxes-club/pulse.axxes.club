@@ -61,3 +61,12 @@ html[data-theme="light"]{color-scheme:light;--bg:#f8f9fc;--panel:#fff;--panel-2:
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 
 .workspace-rail{overflow-y:auto}.workspace-rail>*{flex-shrink:0}
+/* Portal surfaces inherit a quieter, compact layout. */
+.pulse-embedded .workspace-rail,.pulse-embedded .workspace-header{display:none}
+.pulse-embedded .workspace-main{margin-left:0}
+.pulse-embedded .workspace-content{max-width:none;padding:24px}
+.pulse-embedded .button,.pulse-embedded .breakdown-card,.pulse-embedded .chart-panel,.pulse-embedded .metric-card{border-radius:2px}
+:root[data-theme="light"] .pulse-embedded{--bg:#f5f3ee;--panel:#fbfaf6;--panel-2:#eeece5}
+.chart-data{border-top:1px solid var(--line);margin-top:14px;padding-top:14px;font-size:12px;color:var(--muted)}
+.chart-data summary{cursor:pointer}.chart-data .table-scroll{max-height:320px;margin-top:12px}
+.platform-card:disabled{cursor:default;opacity:.7}.integration-form textarea{min-height:100px;background:var(--panel);color:var(--text);border:1px solid var(--line);padding:12px;font:inherit;width:100%}

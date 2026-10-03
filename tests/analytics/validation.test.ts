@@ -51,3 +51,4 @@ it("validates real events and derives different keys for each site", () => {
     "ip",
   );
 });
+it('rejects explicitly sensitive properties and reports invalid timestamp as a client error',()=>{expect(()=>validateBatch({...batch,events:[{...batch.events[0],properties:{password:'private'}}]},new Date('2026-10-03T12:01:00Z'))).toThrow();try{validateBatch({...batch,events:[{...batch.events[0],timestamp:'2025-01-01T00:00:00Z'}]},new Date('2026-10-03T12:01:00Z'))}catch(e){expect((e as any).status).toBe(400)}});

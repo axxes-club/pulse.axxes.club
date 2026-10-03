@@ -1,12 +1,14 @@
 /* AXXES Pulse v1. Public identifiers only. */
 (function () {
   'use strict';
-  if (window.pulse) return;
   var script = document.currentScript;
   if (!script) return;
+  var nativeGeneration = script.getAttribute("data-native-generation");
+  if(nativeGeneration && Number(nativeGeneration)!==window.__axxesPulseGeneration)return;
+  if(window.pulse)return;
   var site = script.getAttribute('data-site');
   if (!site || !/^[a-zA-Z0-9_-]{1,100}$/.test(site)) return;
-  var endpoint = new URL(script.src).origin + '/api/pulse/collect';
+  var endpoint;try{var destination=new URL(script.getAttribute('data-endpoint') || '/api/pulse/collect',script.src);if(destination.protocol!=='https:' && !(destination.protocol==='http:' && ['localhost','127.0.0.1'].includes(destination.hostname)))return;endpoint=destination.href;}catch(_){return;}
   var environment = script.getAttribute('data-environment') === 'development' ? 'development' : 'production';
   var persistent = script.getAttribute('data-identity') === 'persistent';
   var permitted = !persistent && script.getAttribute('data-consent') !== 'required';

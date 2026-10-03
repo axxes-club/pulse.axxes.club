@@ -1,9 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PulseBrand } from "./brand";
 import { ThemeToggle } from "./theme";
+import { OrgSwitcher } from "@/components/org-switcher";
+import { AllAppsSwitcher } from "@/components/all-apps-switcher";
+import type { AppContext } from "@/lib/context";
 import { Icon } from "./icon";
 const nav = [
   ["overview", "Overview", "grid"],
@@ -25,6 +28,7 @@ export function ReportShell({
   organization = "Your workspace",
   sites = [],
   selectedSiteId,
+  context,
 }: {
   view: string;
   children: React.ReactNode;
@@ -32,12 +36,13 @@ export function ReportShell({
   organization?: string;
   sites?: Array<{ id: string; name: string; environment: string }>;
   selectedSiteId?: string;
+  context?: AppContext;
 }) {
   const router = useRouter();
+  const search = useSearchParams();
   const [open, setOpen] = useState(false);
   const base = demo ? "/demo?view=" : "/dashboard/";
-  const link = (v: string) =>
-    demo ? `${base}${v}` : v === "overview" ? "/dashboard" : `${base}${v}`;
+  const link = (v: string) => { const params = new URLSearchParams(search.toString()); if(demo) params.set("view",v); else params.delete("view"); return `${demo ? "/demo" : v === "overview" ? "/dashboard" : `${base}${v}`}?${params}`; };
   return (
     <div className="workspace">
       <button
@@ -125,6 +130,7 @@ export function ReportShell({
             </div>
           )}
           <nav className="workspace-nav">
+            <Link href={link("settings")}><Icon name="shield" size={16}/> App settings</Link>
             <Link href="/docs">
               <Icon name="help" size={16} />
               Documentation
@@ -134,6 +140,7 @@ export function ReportShell({
               Back to AXXES
             </Link>
           </nav>
+          {context && <div style={{padding:"12px 0"}}><OrgSwitcher current={context.memberships.find(m=>m.tenantId===context.tenant.id)!} memberships={context.memberships}/><AllAppsSwitcher tenantId={context.tenant.id}/></div>}
           <div className="rail-user">
             <span className="project-avatar">
               <Icon name={demo ? "users" : "shield"} size={14} />

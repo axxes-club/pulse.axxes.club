@@ -1,7 +1,8 @@
 import type { ReportQuery } from "./query";
 import type { AnalyticsEvent, AnalyticsReport, Breakdown } from "./types";
+import { attributeSessions } from "./attribution";
 import { performanceSummary, retentionCohorts } from "./advanced";
-const DAY = 86400000;
+import { reportWindow } from "./timezone";
 function breakdown(
   events: AnalyticsEvent[],
   key: "source" | "path" | "country" | "device" | "name",
@@ -24,56 +25,61 @@ export function summarizeEvents(
     goalNames?: string[];
   } = {},
 ): AnalyticsReport {
-  const unique = [...new Map(input.map((e) => [e.id, e])).values()].filter(
+  const unique = attributeSessions([...new Map(input.map((e) => [e.id, e])).values()]).filter(
     (e) =>
       e.environment === query.environment &&
       (!query.source || e.source === query.source) &&
+      (!query.path || e.path === query.path) &&
+      (!query.country || e.country === query.country) &&
+      (!query.device || e.device === query.device) &&
+      (!query.campaign || (e.properties?.utm_campaign || "Unspecified") === query.campaign) &&
       e.name !== "pulse.verify",
   );
-  const end = now.getTime(),
-    start = end - query.range * DAY;
+  const window = reportWindow(query.range, query.timezone || "UTC", now,query.from,query.to);
+  const {start,end} = window;
   const select = (from: number, to: number) =>
     unique.filter((e) => {
       const t = new Date(e.time).getTime();
       return t >= from && t < to;
     });
   const events = select(start, end),
-    previous = select(start - query.range * DAY, start);
-  const metric = (es: AnalyticsEvent[]) => ({
+    previous = select(window.previousStart, start);
+  const metric = (es: AnalyticsEvent[]) => { const pageSessions = new Set(es.filter(e=>e.name === "pageview" || (e.properties?.pulse_collection === "browser" && e.name !== "web_vital")).map(e=>e.session)); return ({
     visitors: new Set(
       es.filter((e) => e.name === "pageview").map((e) => e.visitor),
     ).size,
     pageviews: es.filter((e) => e.name === "pageview").length,
-    sessions: new Set(es.map((e) => e.session)).size,
+    sessions: pageSessions.size,
     conversions: new Set(
       es
         .filter((e) =>
           (
             options.goalNames || ["signup", "purchase", "trial_started"]
-          ).includes(e.name),
+          ).includes(e.name) && pageSessions.has(e.session),
         )
         .map((e) => e.session),
     ).size,
-  });
+  }); };
   const counts = metric(events),
     prev = metric(previous);
   const series = (offset: number) =>
     Array.from({ length: query.range }, (_, i) => {
-      const from = start + (i - offset) * DAY;
+      const buckets = offset ? window.previousBuckets : window.buckets;
+      const from = buckets[i];
       return {
         time: new Date(from).toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
-          timeZone: "UTC",
+          timeZone: window.timezone,
         }),
-        value: metric(select(from, from + DAY))[query.metric],
+        value: metric(select(from, buckets[i+1]))[query.metric],
       };
     });
   const pages = events.filter((e) => e.name === "pageview");
   return {
     identityMode: options.identityMode || "ephemeral",
     performance: performanceSummary(events),
-    cohorts: retentionCohorts(events, options.identityMode || "ephemeral"),
+    cohorts: retentionCohorts(events, options.identityMode || "ephemeral",now),
     ...counts,
     conversionRate: counts.sessions
       ? (counts.conversions / counts.sessions) * 100
@@ -81,6 +87,7 @@ export function summarizeEvents(
     series: series(0),
     comparison: series(query.range),
     sources: breakdown(pages, "source"),
+    campaigns:breakdown(pages.map(e=>({...e,name:String(e.properties?.utm_campaign || "Unspecified")})),"name"),
     pages: breakdown(pages, "path"),
     countries: breakdown(pages, "country"),
     devices: breakdown(pages, "device"),
@@ -88,6 +95,7 @@ export function summarizeEvents(
       events.filter((e) => e.name !== "pageview" && e.name !== "web_vital"),
       "name",
     ),
+    live: select(now.getTime()-300000,now.getTime()).sort((a,b)=>Date.parse(b.time)-Date.parse(a.time)).slice(0,100),
     recent: events
       .sort((a, b) => Date.parse(b.time) - Date.parse(a.time))
       .slice(0, 30),

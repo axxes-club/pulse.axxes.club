@@ -8,6 +8,7 @@ import { summarizeEvents } from "@/lib/analytics/metrics";
 import { ReportShell } from "./report-shell";
 import { ReportView } from "./report-view";
 import { getReportConfig } from "@/lib/analytics/config";
+import { reportWindow } from "@/lib/analytics/timezone";
 import { Icon } from "./icon";
 export async function Dashboard({
   view = "overview",
@@ -19,7 +20,7 @@ export async function Dashboard({
   const ctx = await requireContext();
   if (view === "integrations")
     return (
-      <ReportShell view={view} organization={ctx.tenant.name}>
+      <ReportShell view={view} organization={ctx.tenant.name} context={ctx}>
         <Suspense>
           <ReportView view={view} organizationKey={ctx.tenant.id} />
         </Suspense>
@@ -28,19 +29,22 @@ export async function Dashboard({
   let error = "";
   let sites: Awaited<ReturnType<typeof listSites>> = [];
   try {
-    sites = await listSites();
+    sites = await listSites(view === "settings");
   } catch {
     error =
       "Analytics setup is not available yet. Your organization data is safe; try again once Pulse storage has been configured.";
   }
-  const selected = sites.find((s) => s.publicId === search.site) || sites[0];
+  let selected = sites.find((s) => s.publicId === search.site) || sites[0];
+  if(selected && search.environment && selected.environment !== search.environment) selected = sites.find(s=>s.name === selected!.name && s.environment === search.environment) || selected;
   if (search.site && !sites.some((s) => s.publicId === search.site))
     error = "That app is not available in this organization.";
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(search)) if (v) params.set(k, v);
   if (!params.has("environment") && selected)
     params.set("environment", selected.environment);
+  if(!params.has("timezone") && selected) params.set("timezone",selected.timezone);
   const query = parseReportQuery(params);
+  const selectedWindow = reportWindow(query.range,query.timezone || "UTC",new Date(),query.from,query.to);
   let config: {
     goals: string[];
     funnels: Array<{
@@ -51,10 +55,10 @@ export async function Dashboard({
     }>;
   } = { goals: [], funnels: [] };
   let events: Awaited<ReturnType<typeof getEvents>> = [];
-  if (selected && !error) {
+  if (selected && !error && view !== "settings") {
     try {
       [events, config] = await Promise.all([
-        getEvents(selected, query.range),
+        getEvents(selected, query.range,new Date(selectedWindow.previousStart)),
         getReportConfig(selected.publicId),
       ]);
     } catch {
@@ -65,7 +69,7 @@ export async function Dashboard({
   return (
     <ReportShell
       view={view}
-      organization={ctx.tenant.name}
+      organization={ctx.tenant.name} context={ctx}
       sites={sites.map((s) => ({
         id: s.publicId,
         name: s.name,
@@ -106,10 +110,11 @@ export async function Dashboard({
           <ReportView
             view={view}
             siteId={selected.publicId}
+            timezone={selected.timezone}
             funnels={config.funnels}
             goalNames={config.goals}
             canManage={["owner", "admin"].includes(ctx.role)}
-            events={view === "funnels" ? events : []}
+            events={view === "funnels" ? events.filter(e=>{const w=selectedWindow;const t=Date.parse(e.time);return t>=w.start&&t<w.end&&e.environment===query.environment&&(!query.source||query.source===e.source)&&(!query.path||query.path===e.path)&&(!query.country||query.country===e.country)}) : []}
             data={summarizeEvents(events, query, new Date(), {
               identityMode: selected.identityMode,
               goalNames: config.goals,

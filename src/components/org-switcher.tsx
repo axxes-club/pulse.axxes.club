@@ -22,7 +22,7 @@ export function OrgSwitcher({ current, memberships, collapsed = false }: {
         const result = await switchOrganization(tenantId)
         if (result.error) { setError(result.error); return }
         setOpen(false)
-        router.push("/")
+        router.push("/dashboard")
         router.refresh()
       } catch {
         setError("Could not switch organization. Please try again.")

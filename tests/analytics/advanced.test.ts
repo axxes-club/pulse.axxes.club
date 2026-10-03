@@ -19,8 +19,9 @@ it("counts a cohort visitor returning the next day once", () => {
     { name: "pageview", visitor: "v1", time: "2026-10-02T13:00:00Z" },
     { name: "pageview", visitor: "v2", time: "2026-10-01T12:00:00Z" },
   ] as any;
-  expect(retentionCohorts(events, "persistent")).toEqual([
+  expect(retentionCohorts(events, "persistent",new Date("2026-10-10T12:00:00Z"))).toEqual([
     { day: "2026-10-01", size: 2, retained: [2, 1, 0, 0, 0, 0, 0] },
   ]);
   expect(retentionCohorts(events, "ephemeral")).toEqual([]);
 });
+it('does not show a zero return rate for days that have not completed',()=>{const events=[{name:'pageview',visitor:'v1',time:'2026-10-02T12:00:00Z'}] as any;expect(retentionCohorts(events,'persistent',new Date('2026-10-03T12:00:00Z'))[0].retained).toEqual([1,null,null,null,null,null,null])});

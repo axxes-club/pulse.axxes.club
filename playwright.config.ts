@@ -1,5 +1,6 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
+  projects: process.env.PULSE_TEST_WEBKIT === "1" ? [{name:"chromium",use:{browserName:"chromium"}},{name:"webkit",use:{browserName:"webkit"}}] : [{name:"chromium",use:{browserName:"chromium"}}],
   testDir: "./tests/browser",
   timeout: 60000,
   workers: 1,

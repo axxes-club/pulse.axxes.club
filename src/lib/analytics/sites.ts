@@ -19,13 +19,13 @@ export type AnalyticsSite = {
 };
 const columns =
   'id, tenant_id as "tenantId", public_id as "publicId", name, platform, collection, environment, allowed_origins as "allowedOrigins", enabled, timezone, identity_mode as "identityMode"';
-export async function listSites() {
+export async function listSites(includeDisabled=false) {
   const ctx = await getContext();
   if (!ctx)
     throw new AnalyticsError("Sign in with AXXES to connect your app", 401);
   const result = await metadataPool().query<AnalyticsSite>(
-    `select ${columns} from pulse_sites where tenant_id=$1 and enabled=true order by created_at desc`,
-    [ctx.tenant.id],
+    `select ${columns} from pulse_sites where tenant_id=$1 and ($2::boolean or enabled=true) order by created_at desc`,
+    [ctx.tenant.id,includeDisabled && ["owner","admin"].includes(ctx.role)],
   );
   return result.rows;
 }
@@ -53,6 +53,7 @@ export async function requireAnalyticsAccess(
 }
 const createSchema = z
   .object({
+    integrationKey: z.string().regex(/^[a-z0-9_-]{1,60}$/).optional(),
     name: z.string().trim().min(1).max(100),
     origin: z.string().max(2048).optional(),
     platform: z.enum([
@@ -99,9 +100,13 @@ export async function createSite(input: unknown) {
       throw new AnalyticsError("Production apps require an HTTPS origin");
     origins = [url.origin];
   }
+  if (value.platform === "axxes") {
+    const app = await metadataPool().query("select url from axxes_product where key=$1 and status in ('live','beta')",[value.integrationKey]);
+    if(!app.rows[0] || new URL(app.rows[0].url).origin !== origins[0]) throw new AnalyticsError("Choose an available AXXES app from the catalog");
+  }
   const publicId = `app_${randomUUID().replaceAll("-", "")}`;
   const result = await metadataPool().query<AnalyticsSite>(
-    `insert into pulse_sites (tenant_id,public_id,name,platform,collection,environment,allowed_origins,identity_mode) values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8) returning ${columns}`,
+    `insert into pulse_sites (tenant_id,public_id,name,platform,collection,environment,allowed_origins,identity_mode,integration_key) values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9) returning ${columns}`,
     [
       ctx.tenant.id,
       publicId,
@@ -111,6 +116,7 @@ export async function createSite(input: unknown) {
       value.environment,
       JSON.stringify(origins),
       value.identityMode,
+      value.platform === "axxes" ? value.integrationKey : null,
     ],
   );
   return result.rows[0];
@@ -143,3 +149,13 @@ export async function verifyCredential(secret: string, siteId: string) {
   );
   return result.rows[0] || null;
 }
+
+export async function updateSite(publicId:string,input:unknown){
+ const {site}=await requireAnalyticsAccess(publicId,"manage");
+ const value=z.object({name:z.string().trim().min(1).max(100),timezone:z.string().max(100),enabled:z.boolean(),allowedOrigins:z.array(z.string().url().max(2048)).max(10)}).strict().parse(input);
+ try{new Intl.DateTimeFormat("en",{timeZone:value.timezone}).format()}catch{throw new AnalyticsError("Choose a valid reporting timezone")}
+ const origins=value.allowedOrigins.map(raw=>{const u=new URL(raw);if(u.username||u.password||!["https:","http:"].includes(u.protocol)||(site.environment==="production"&&u.protocol!=="https:"))throw new AnalyticsError("Production origins require HTTPS");return u.origin});
+ if(site.collection==="browser"&&!origins.length)throw new AnalyticsError("Browser apps need an allowed origin");
+ await metadataPool().query("update pulse_sites set name=$1,timezone=$2,enabled=$3,allowed_origins=$4::jsonb where id=$5 and tenant_id=$6",[value.name,value.timezone,value.enabled,JSON.stringify([...new Set(origins)]),site.id,site.tenantId]);return {ok:true};
+}
+export async function revokeServerCredential(publicId:string,credentialId:string){const {site}=await requireAnalyticsAccess(publicId,"manage");if(!z.string().uuid().safeParse(credentialId).success)throw new AnalyticsError("Invalid credential");await metadataPool().query("update pulse_server_credentials set revoked_at=now() where id=$1 and site_id=$2",[credentialId,site.id]);return {ok:true}}

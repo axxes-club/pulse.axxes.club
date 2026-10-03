@@ -17,6 +17,11 @@ export function IntegrationWizard({
   const storageKey = demo
     ? "pulse-demo-setup"
     : `pulse-setup:${organizationKey || "workspace"}`;
+  const [catalog,setCatalog] = useState<Array<{key:string;name:string;url:string;connections:Array<{publicId:string;environment:string;lastEventAt:string|null}>}>>([]);
+  const [integrationKey,setIntegrationKey] = useState("");
+  const [catalogError,setCatalogError] = useState("");
+  useEffect(()=>{if(demo)return;fetch("/api/pulse/catalog").then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.error || "Catalog unavailable");setCatalog(data.apps)}).catch(e=>setCatalogError(e.message));},[demo]);
+  const [verificationToken, setVerificationToken] = useState("");
   const [identityMode, setIdentityMode] = useState<"ephemeral" | "persistent">(
     "ephemeral",
   );
@@ -45,6 +50,7 @@ export function IntegrationWizard({
         );
         if (/^[a-zA-Z0-9_-]{1,100}$/.test(saved.siteId || ""))
           setSiteId(saved.siteId);
+        if (saved.identityMode === "persistent") setIdentityMode("persistent");
       }
     } catch {}
   }, []);
@@ -88,6 +94,7 @@ export function IntegrationWizard({
           platform,
           environment,
           identityMode,
+          ...(platform === "axxes" ? {integrationKey} : {}),
         }),
       });
       const data = await response.json();
@@ -95,6 +102,14 @@ export function IntegrationWizard({
         throw new Error(data.error || "Could not create your app");
       setSiteId(data.publicId);
       setStatus("waiting");
+      const verificationResponse = await fetch(
+        `/api/pulse/sites/${data.publicId}/verify`,
+        { method: "POST" },
+      );
+      const verification = await verificationResponse.json();
+      if (!verificationResponse.ok)
+        throw new Error(verification.error || "Could not start verification");
+      setVerificationToken(verification.token);
       localStorage.setItem(
         storageKey,
         JSON.stringify({
@@ -103,6 +118,8 @@ export function IntegrationWizard({
           platform,
           environment,
           siteId: data.publicId,
+          identityMode,
+          ...(platform === "axxes" ? {integrationKey} : {}),
         }),
       );
       if (["node", "http"].includes(platform)) {
@@ -134,16 +151,28 @@ export function IntegrationWizard({
     }
     setPending(true);
     try {
+      if (!verificationToken) {
+        const r = await fetch(`/api/pulse/sites/${siteId}/verify`, {
+          method: "POST",
+        });
+        const challenge = await r.json();
+        if (!r.ok)
+          throw new Error(challenge.error || "Could not start verification");
+        setVerificationToken(challenge.token);
+        setError("Run the test event below in your app, then check again.");
+        return;
+      }
       const r = await fetch(
-        `/api/pulse/sites/${siteId}/verify?environment=${environment}`,
+        `/api/pulse/sites/${siteId}/verify?token=${verificationToken}`,
       );
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || "Verification unavailable");
+      if(data.expired){setVerificationToken("");throw new Error("Your test token expired. Check again to get a new test event.");}
       setStatus(data.connected ? "connected" : "waiting");
       setError(
         data.connected
           ? ""
-          : "No persisted event yet. Check your script identifier, allowed origin, and consent settings.",
+          : "No matching test event yet. Run the test call in your app, then check again. Check your app ID, allowed origin, and consent settings.",
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not verify");
@@ -158,6 +187,7 @@ export function IntegrationWizard({
           <h1>Connect your app</h1>
           <p>Choose your platform. Add a little code. Get a clearer picture.</p>
         </div>
+        {siteId !== "YOUR_PUBLIC_APP_ID" && <button className="button secondary small" onClick={()=>{setSiteId("YOUR_PUBLIC_APP_ID");setVerificationToken("");setServerKey("");setStatus("waiting");setError("");setName("");setOrigin("");localStorage.removeItem(storageKey)}}>Connect another app</button>}
         <Link href="/docs" className="button secondary small">
           Read the docs <Icon name="external" size={14} />
         </Link>
@@ -194,6 +224,7 @@ export function IntegrationWizard({
               setPlatform(p.id);
               setError("");
             }}
+            disabled={!demo && siteId !== "YOUR_PUBLIC_APP_ID"}
             aria-pressed={platform === p.id}
           >
             <span className="platform-symbol">{p.symbol}</span>
@@ -203,10 +234,12 @@ export function IntegrationWizard({
           </button>
         ))}
       </div>
+      {platform === "axxes" && <div className="integration-form"><label>Choose an AXXES app<select aria-label="AXXES app" value={integrationKey} onChange={e=>{setIntegrationKey(e.target.value);const app=catalog.find(a=>a.key===e.target.value);if(app){setName(app.name);setOrigin(app.url)}}}><option value="">{demo?"Sign in to load your AXXES apps":"Choose an app"}</option>{catalog.map(app=><option key={app.key} value={app.key}>{app.name}{app.connections.length?" · already tracked":""}</option>)}</select></label>{catalogError&&<p role="status">{catalogError}</p>}</div>}
       <div className="integration-form">
         <label>
           App name
           <input
+            disabled={!demo && siteId !== "YOUR_PUBLIC_APP_ID"}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="My awesome app"
@@ -218,6 +251,7 @@ export function IntegrationWizard({
             Website address
             <input
               type="url"
+              disabled={!demo && siteId !== "YOUR_PUBLIC_APP_ID"}
               value={origin}
               onChange={(e) => setOrigin(e.target.value)}
               placeholder="https://your-app.com"
@@ -227,6 +261,7 @@ export function IntegrationWizard({
         <label>
           Environment
           <select
+            disabled={!demo && siteId !== "YOUR_PUBLIC_APP_ID"}
             value={environment}
             onChange={(e) =>
               setEnvironment(e.target.value as "production" | "development")
@@ -240,7 +275,7 @@ export function IntegrationWizard({
       <button
         className="button primary small"
         onClick={create}
-        disabled={pending || !name.trim()}
+        disabled={pending || !name.trim() || siteId !== "YOUR_PUBLIC_APP_ID"}
       >
         Create app & get setup <Icon name="arrow" size={15} />
       </button>
@@ -333,9 +368,31 @@ export function IntegrationWizard({
               : "Waiting for your first event"}
           </div>
           <p>
-            Open your app after installing the script. Pulse confirms the
-            connection once an event is safely stored.
+            Open your app after installing the script. Send this test event from
+            your app’s browser console. Test events stay out of traffic reports.
           </p>
+          {verificationToken && (
+            <div className="installation-code" style={{ marginBottom: 16 }}>
+              <pre>
+                <code>
+                  {["node", "http"].includes(platform)
+                    ? JSON.stringify(
+                        {
+                          name: "pulse.verify",
+                          properties: { verification_token: verificationToken },
+                        },
+                        null,
+                        2,
+                      )
+                    : `window.pulse.track('pulse.verify', { verification_token: '${verificationToken}' }); window.pulse.flush();`}
+                </code>
+              </pre>
+              <p className="muted" style={{ padding: 12 }}>
+                This test expires in 10 minutes. Backend apps send the event
+                through the server API.
+              </p>
+            </div>
+          )}
           <button
             className="button secondary"
             onClick={verify}
@@ -345,7 +402,10 @@ export function IntegrationWizard({
             <Icon name="arrow" size={15} />
           </button>
           {status === "connected" && (
-            <Link href="/dashboard" className="button primary">
+            <Link
+              href={`/dashboard?site=${siteId}&environment=${environment}`}
+              className="button primary"
+            >
               Open analytics <Icon name="arrow" size={15} />
             </Link>
           )}
@@ -361,6 +421,8 @@ export function IntegrationWizard({
         </p>
       )}
       <div className="connection-list">
+        {catalog.length>0 && <><h2>Your AXXES apps</h2>{catalog.filter(app=>["suite","handshake","pay","store","vibez","relay","lanes","folders","office","members","tollbooth"].includes(app.key)||app.connections.length).map(app=><div className="connection-row" key={app.key}><div><strong>{app.name}</strong><p className="muted">{app.connections.some(c=>c.lastEventAt)?"Traffic verified":app.connections.length?"Setup created · waiting for events":"Ready to connect"}</p></div><button className="button secondary small" onClick={()=>{setPlatform("axxes");setIntegrationKey(app.key);setName(app.name);setOrigin(app.url);const existing=app.connections.find(c=>c.environment===environment);setSiteId(existing?.publicId || "YOUR_PUBLIC_APP_ID");setVerificationToken("");setStatus(existing?.lastEventAt?"connected":"waiting");window.scrollTo({top:0,behavior:"smooth"})}}>Set up</button></div>)}</>}
+
         <h2>Built for your entire stack</h2>
         <div className="connection-row">
           <span className="project-avatar">

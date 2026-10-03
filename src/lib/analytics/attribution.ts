@@ -1,0 +1,3 @@
+import type { AnalyticsEvent } from './types';
+/** Entry attribution uses the first observed page of a session in retained data. */
+export function attributeSessions(events:AnalyticsEvent[]){const entries=new Map<string,AnalyticsEvent>();for(const event of events){if(event.name!=='pageview')continue;const previous=entries.get(event.session);if(!previous||Date.parse(event.time)<Date.parse(previous.time))entries.set(event.session,event)}return events.map(event=>{const entry=entries.get(event.session);return entry?{...event,source:entry.source,properties:{...event.properties,...Object.fromEntries(Object.entries(entry.properties||{}).filter(([key])=>key.startsWith('utm_')))}}:event})}

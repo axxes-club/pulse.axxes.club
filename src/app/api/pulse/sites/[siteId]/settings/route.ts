@@ -1,0 +1,6 @@
+import { requireAnalyticsAccess,updateSite,revokeServerCredential } from '@/lib/analytics/sites';
+import { metadataPool } from '@/lib/analytics/postgres';
+import { readJson,requireSameOrigin,errorResponse } from '@/lib/analytics/http';
+export async function GET(_request:Request,{params}:{params:Promise<{siteId:string}>}){try{const {site}=await requireAnalyticsAccess((await params).siteId,'manage');const credentials=await metadataPool().query('select id,created_at as "createdAt",revoked_at as "revokedAt" from pulse_server_credentials where site_id=$1 order by created_at desc',[site.id]);return Response.json({site,credentials:credentials.rows},{headers:{'Cache-Control':'no-store'}})}catch(e){return errorResponse(e)}}
+export async function PATCH(request:Request,{params}:{params:Promise<{siteId:string}>}){try{requireSameOrigin(request);return Response.json(await updateSite((await params).siteId,await readJson(request)))}catch(e){return errorResponse(e)}}
+export async function DELETE(request:Request,{params}:{params:Promise<{siteId:string}>}){try{requireSameOrigin(request);const body=await readJson(request);return Response.json(await revokeServerCredential((await params).siteId,body.credentialId))}catch(e){return errorResponse(e)}}

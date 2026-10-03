@@ -5,6 +5,7 @@ import type { EventBatch } from "./validation";
 import { sanitizeUrl, safeSource, visitorKey } from "./validation";
 import type { AnalyticsSite } from "./sites";
 import { analyticsPool } from "./postgres";
+import { reportWindow } from "./timezone";
 import { AnalyticsError } from "./access";
 import { summarizeEvents } from "./metrics";
 import type { ReportQuery } from "./query";
@@ -70,6 +71,7 @@ export async function persistBatch(
         if (
           !p ||
           !Number.isSafeInteger(p.amountMinor) ||
+          Number(p.amountMinor)<0 ||
           typeof p.currency !== "string" ||
           !/^[A-Z]{3}$/.test(p.currency)
         )
@@ -119,7 +121,7 @@ export async function persistBatch(
           safeSource(event.referrer, sanitized.campaign),
           request.country || "Unknown",
           device,
-          JSON.stringify({ ...event.properties, ...sanitized.campaign }),
+          JSON.stringify({ ...event.properties, ...sanitized.campaign, pulse_collection:trusted ? "server" : "browser" }),
         ],
       );
       accepted += result.rowCount || 0;
@@ -133,10 +135,10 @@ export async function persistBatch(
     client.release();
   }
 }
-export async function getEvents(site: AnalyticsSite, range: number) {
+export async function getEvents(site: AnalyticsSite, range: number,from?:Date) {
   const result = await analyticsPool().query(
-    "select event_id as id,name,occurred_at as time,visitor_key as visitor,session_key as session,path,source,country,device,environment,properties from pulse_events where tenant_id=$1 and site_id=$2 and environment=$3 and occurred_at>=now()-($4::int*interval '1 day') order by occurred_at desc limit 100001",
-    [site.tenantId, site.id, site.environment, Math.min(range * 2, 180)],
+    "select event_id as id,name,occurred_at as time,visitor_key as visitor,session_key as session,path,source,country,device,environment,properties from pulse_events where tenant_id=$1 and site_id=$2 and environment=$3 and occurred_at>=$4::timestamptz order by occurred_at desc limit 100001",
+    [site.tenantId, site.id, site.environment, from || new Date(Date.now()-Math.min(range * 2 + 2, 182)*86400000)],
   );
   if (result.rows.length > 100000)
     throw new AnalyticsError(
@@ -149,7 +151,9 @@ export async function getEvents(site: AnalyticsSite, range: number) {
   })) as AnalyticsEvent[];
 }
 export async function getReport(site: AnalyticsSite, query: ReportQuery) {
-  return summarizeEvents(await getEvents(site, query.range), query);
+  const {getReportConfig} = await import("./config");
+  const [events,config] = await Promise.all([getEvents(site, query.range,new Date(reportWindow(query.range,query.timezone || site.timezone,new Date(),query.from,query.to).previousStart)),getReportConfig(site.publicId)]);
+  return summarizeEvents(events, query,new Date(),{identityMode:site.identityMode,goalNames:config.goals});
 }
 export async function connectionStatus(site: AnalyticsSite) {
   const result = await analyticsPool().query(

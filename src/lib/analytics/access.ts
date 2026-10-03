@@ -13,7 +13,7 @@ export function authorizeSite(
 ): true {
   if (context.tenantId !== site.tenantId)
     throw new AnalyticsError("App not found", 404);
-  if (!site.enabled) throw new AnalyticsError("App is disabled", 403);
+  if (!site.enabled && action === "read") throw new AnalyticsError("App is disabled", 403);
   if (action === "manage" && !["owner", "admin"].includes(context.role))
     throw new AnalyticsError(
       "An organization administrator must manage this app",

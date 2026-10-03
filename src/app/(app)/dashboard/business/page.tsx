@@ -15,7 +15,7 @@ function Sparkline({ series }: { series: { day: string; total: number }[] }) {
   const step = w / (series.length - 1)
   const pts = series.map((d, i) => `${(i * step).toFixed(1)},${(h - (d.total / max) * (h - 8) - 4).toFixed(1)}`)
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="h-32 w-full" preserveAspectRatio="none" role="img" aria-label="Paid revenue per day, last 30 days">
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-32 w-full" preserveAspectRatio="none" role="img" aria-label="Captured order value in USD per day, last 30 days">
       <defs>
         <linearGradient id="fill" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.35" />
@@ -40,8 +40,10 @@ export default async function PulsePage() {
       <section className="card p-5 sm:p-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.15em] text-muted">Paid revenue · 30 days</p>
+            <p className="font-mono text-[11px] uppercase tracking-[0.15em] text-muted">Captured order value · USD · 30 days</p>
             <p className="mt-2 text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">{usd(v.revenue)}</p>
+            <p className="mt-2 text-xs text-muted">Captured USD orders, before refund adjustments. Authorizations are excluded.</p>
+            {v.currencyTotals.filter(c=>c.currency!=="USD").map(c=><p key={c.currency} className="mt-1 text-xs text-muted">{new Intl.NumberFormat("en-US",{style:"currency",currency:c.currency}).format(c.total)} in {c.currency} · shown separately</p>)}
             <p className="mt-1 text-sm text-muted">{v.orders} paid orders · {change}</p>
           </div>
         </div>

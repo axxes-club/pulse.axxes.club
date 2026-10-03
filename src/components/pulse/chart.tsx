@@ -101,6 +101,7 @@ export function PulseChart({
           </strong>
         </div>
       )}
+      {!compact && <details className="chart-data"><summary>View chart data</summary><div className="table-scroll"><table className="events-table"><thead><tr><th>Date</th><th>{label}</th>{comparison&&<th>Previous period</th>}</tr></thead><tbody>{series.map((row,i)=><tr key={i}><td>{row.time}</td><td>{row.value.toLocaleString()}</td>{comparison&&<td>{comparison[i]?.value.toLocaleString() || "0"}</td>}</tr>)}</tbody></table></div></details>}
     </div>
   );
 }
