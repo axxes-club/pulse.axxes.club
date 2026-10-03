@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { publicOrigin } from "@/lib/public-origin"
 import { switchOrganization } from "@/lib/actions/org"
 
 /** A suite launch preference is revalidated by the existing server switch action. */
@@ -9,5 +10,5 @@ export async function GET(request: Request) {
   }
   const result = await switchOrganization(tenant)
   if (result.error) return NextResponse.json({ error: result.error }, { status: result.error.includes("sign in") ? 401 : 403 })
-  return NextResponse.redirect(new URL(new URL(request.url).searchParams.get("embed") === "1" ? "/embed/overview" : "/dashboard", request.url))
+  return NextResponse.redirect(new URL(new URL(request.url).searchParams.get("embed") === "1" ? "/embed/overview" : "/dashboard", publicOrigin(request)))
 }
