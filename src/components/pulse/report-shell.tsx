@@ -1,13 +1,14 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { PulseBrand } from "./brand";
 import { ThemeToggle } from "./theme";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { AllAppsSwitcher } from "@/components/all-apps-switcher";
 import type { AppContext } from "@/lib/context";
 import { Icon } from "./icon";
+import { reportPath } from "@/lib/analytics/navigation";
 const nav = [
   ["overview", "Overview", "grid"],
   ["realtime", "Live", "live"],
@@ -39,10 +40,10 @@ export function ReportShell({
   context?: AppContext;
 }) {
   const router = useRouter();
+  const embedded = usePathname().startsWith("/embed/");
   const search = useSearchParams();
   const [open, setOpen] = useState(false);
-  const base = demo ? "/demo?view=" : "/dashboard/";
-  const link = (v: string) => { const params = new URLSearchParams(search.toString()); if(demo) params.set("view",v); else params.delete("view"); return `${demo ? "/demo" : v === "overview" ? "/dashboard" : `${base}${v}`}?${params}`; };
+  const link = (v: string) => { const params = new URLSearchParams(search.toString()); if(demo) params.set("view",v); else params.delete("view"); return `${demo ? "/demo" : reportPath(v,embedded)}?${params}`; };
   return (
     <div className="workspace">
       <button
@@ -67,7 +68,7 @@ export function ReportShell({
                 onChange={(e) => {
                   const site = sites.find((s) => s.id === e.target.value);
                   router.push(
-                    `/dashboard?site=${e.target.value}&environment=${site?.environment || "production"}`,
+                    `${reportPath("overview",embedded)}?site=${e.target.value}&environment=${site?.environment || "production"}`,
                   );
                 }}
               >

@@ -1,3 +1,4 @@
+import { dateInZone } from "./timezone";
 import type { AnalyticsEvent } from "./types";
 export function performanceSummary(
   events: AnalyticsEvent[],
@@ -29,13 +30,15 @@ export function retentionCohorts(
   events: AnalyticsEvent[],
   mode: "ephemeral" | "persistent",
   now = new Date(),
+  observationEnd = now,
+  timezone = "UTC",
 ): Array<{ day: string; size: number; retained: Array<number|null> }> {
   if (mode !== "persistent") return [];
   const visits = new Map<string, Set<string>>();
   for (const e of events) {
     if (e.name !== "pageview") continue;
     const days = visits.get(e.visitor) || new Set<string>();
-    days.add(e.time.slice(0, 10));
+    days.add(dateInZone(Date.parse(e.time),timezone));
     visits.set(e.visitor, days);
   }
   const cohorts = new Map<
@@ -56,7 +59,8 @@ export function retentionCohorts(
         .slice(0, 10);
       if (days.has(day)) c.retained[offset]=(c.retained[offset] || 0)+1;
     }
-    for(let i=0;i<7;i++){if(Date.parse(first+"T00:00:00Z")+(i+1)*86400000>now.getTime())c.retained[i]=null;}
+    const completeThrough=dateInZone(Math.min(now.getTime(),observationEnd.getTime()),timezone);
+    for(let i=0;i<7;i++){const day=new Date(Date.parse(first+"T00:00:00Z")+i*86400000).toISOString().slice(0,10);if(day>=completeThrough)c.retained[i]=null;}
     cohorts.set(first, c);
   }
   return [...cohorts.values()].sort((a, b) => a.day.localeCompare(b.day));

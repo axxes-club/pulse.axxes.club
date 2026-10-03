@@ -17,7 +17,7 @@ export function IntegrationWizard({
   const storageKey = demo
     ? "pulse-demo-setup"
     : `pulse-setup:${organizationKey || "workspace"}`;
-  const [catalog,setCatalog] = useState<Array<{key:string;name:string;url:string;connections:Array<{publicId:string;environment:string;lastEventAt:string|null}>}>>([]);
+  const [catalog,setCatalog] = useState<Array<{key:string;name:string;url:string;nativeAvailable:boolean;connections:Array<{publicId:string;environment:string;lastEventAt:string|null}>}>>([]);
   const [integrationKey,setIntegrationKey] = useState("");
   const [catalogError,setCatalogError] = useState("");
   useEffect(()=>{if(demo)return;fetch("/api/pulse/catalog").then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.error || "Catalog unavailable");setCatalog(data.apps)}).catch(e=>setCatalogError(e.message));},[demo]);
@@ -50,10 +50,12 @@ export function IntegrationWizard({
         );
         if (/^[a-zA-Z0-9_-]{1,100}$/.test(saved.siteId || ""))
           setSiteId(saved.siteId);
+        if (saved.integrationKey) setIntegrationKey(saved.integrationKey);
         if (saved.identityMode === "persistent") setIdentityMode("persistent");
       }
     } catch {}
   }, []);
+  const nativeConnection = platform === "axxes" && environment === "production" && !!catalog.find(a=>a.key===integrationKey)?.nativeAvailable;
   const recipe = getInstallationRecipe(platform, {
     publicSiteId: siteId,
     endpoint: "https://pulse.axxes.app",
@@ -64,6 +66,7 @@ export function IntegrationWizard({
       "data-site=",
       'data-identity="persistent" data-consent="required" data-site=',
     );
+  if(verificationToken && !["node","http"].includes(platform)) recipe.code=recipe.code.replace("data-site=",`data-verify="${verificationToken}" data-site=`);
   async function copy() {
     try {
       await navigator.clipboard.writeText(recipe.code);
@@ -151,6 +154,7 @@ export function IntegrationWizard({
     }
     setPending(true);
     try {
+      if(nativeConnection){const r=await fetch(`/api/pulse/sites/${siteId}/verify`);const result=await r.json();if(!r.ok)throw new Error(result.error||"Connection unavailable");setStatus(result.connected?"connected":"waiting");setError(result.connected?"":"Open the AXXES app in this organization or complete an action, then check again.");return;}
       if (!verificationToken) {
         const r = await fetch(`/api/pulse/sites/${siteId}/verify`, {
           method: "POST",
@@ -234,7 +238,7 @@ export function IntegrationWizard({
           </button>
         ))}
       </div>
-      {platform === "axxes" && <div className="integration-form"><label>Choose an AXXES app<select aria-label="AXXES app" value={integrationKey} onChange={e=>{setIntegrationKey(e.target.value);const app=catalog.find(a=>a.key===e.target.value);if(app){setName(app.name);setOrigin(app.url)}}}><option value="">{demo?"Sign in to load your AXXES apps":"Choose an app"}</option>{catalog.map(app=><option key={app.key} value={app.key}>{app.name}{app.connections.length?" · already tracked":""}</option>)}</select></label>{catalogError&&<p role="status">{catalogError}</p>}</div>}
+      {platform === "axxes" && <div className="integration-form"><label>Choose an AXXES app<select aria-label="AXXES app" value={integrationKey} disabled={!demo && siteId !== "YOUR_PUBLIC_APP_ID"} onChange={e=>{setIntegrationKey(e.target.value);const app=catalog.find(a=>a.key===e.target.value);if(app){setName(app.name);setOrigin(app.url)}}}><option value="">{demo?"Sign in to load your AXXES apps":"Choose an app"}</option>{catalog.map(app=><option key={app.key} value={app.key}>{app.name}{app.connections.length?" · already tracked":""}</option>)}</select></label>{catalogError&&<p role="status">{catalogError}</p>}</div>}
       <div className="integration-form">
         <label>
           App name
@@ -298,11 +302,11 @@ export function IntegrationWizard({
           <div className="installation-step">
             <span className="step-number">2</span>
             <div>
-              <h3>Add Pulse to your app</h3>
-              <p>{recipe.instruction}</p>
+              <h3>{nativeConnection?"Your AXXES connection is ready":"Add Pulse to your app"}</h3>
+              <p>{nativeConnection?"No code needed. Open this AXXES app in the same organization. Available page tracking and committed actions flow into Pulse automatically.":recipe.instruction}</p>
             </div>
           </div>
-          <div className="installation-code">
+          {nativeConnection?<a className="button primary" href={origin} target="_blank" rel="noopener noreferrer">Open {name} ↗</a>:<div className="installation-code">
             <div className="installation-code-header">
               <span>{recipe.file}</span>
               <button onClick={copy} className="copy-button">
@@ -313,7 +317,7 @@ export function IntegrationWizard({
             <pre>
               <code>{recipe.code}</code>
             </pre>
-          </div>
+          </div>}
           <details className="integration-advanced">
             <summary>Consent, custom events, and advanced setup</summary>
             <label
@@ -368,10 +372,9 @@ export function IntegrationWizard({
               : "Waiting for your first event"}
           </div>
           <p>
-            Open your app after installing the script. Send this test event from
-            your app’s browser console. Test events stay out of traffic reports.
+            {nativeConnection?"Open the connected AXXES app, then check here for its first persisted event.":"Open your app after installing the code. Browser setup sends a test automatically. Backend apps send the test event below. Test events stay out of traffic reports."}
           </p>
-          {verificationToken && (
+          {verificationToken && !nativeConnection && (
             <div className="installation-code" style={{ marginBottom: 16 }}>
               <pre>
                 <code>

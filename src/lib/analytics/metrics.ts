@@ -16,16 +16,8 @@ function breakdown(
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 }
-export function summarizeEvents(
-  input: AnalyticsEvent[],
-  query: ReportQuery,
-  now = new Date(),
-  options: {
-    identityMode?: "ephemeral" | "persistent";
-    goalNames?: string[];
-  } = {},
-): AnalyticsReport {
-  const unique = attributeSessions([...new Map(input.map((e) => [e.id, e])).values()]).filter(
+export function filteredEvents(input:AnalyticsEvent[],query:ReportQuery){
+  return attributeSessions([...new Map(input.map((e) => [e.id, e])).values()]).filter(
     (e) =>
       e.environment === query.environment &&
       (!query.source || e.source === query.source) &&
@@ -35,6 +27,17 @@ export function summarizeEvents(
       (!query.campaign || (e.properties?.utm_campaign || "Unspecified") === query.campaign) &&
       e.name !== "pulse.verify",
   );
+}
+export function summarizeEvents(
+  input: AnalyticsEvent[],
+  query: ReportQuery,
+  now = new Date(),
+  options: {
+    identityMode?: "ephemeral" | "persistent";
+    goalNames?: string[];
+  } = {},
+): AnalyticsReport {
+  const unique = filteredEvents(input,query);
   const window = reportWindow(query.range, query.timezone || "UTC", now,query.from,query.to);
   const {start,end} = window;
   const select = (from: number, to: number) =>
@@ -79,7 +82,7 @@ export function summarizeEvents(
   return {
     identityMode: options.identityMode || "ephemeral",
     performance: performanceSummary(events),
-    cohorts: retentionCohorts(events, options.identityMode || "ephemeral",now),
+    cohorts: retentionCohorts(events, options.identityMode || "ephemeral",now,new Date(end),window.timezone),
     ...counts,
     conversionRate: counts.sessions
       ? (counts.conversions / counts.sessions) * 100

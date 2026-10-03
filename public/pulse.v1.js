@@ -12,6 +12,7 @@
   var environment = script.getAttribute('data-environment') === 'development' ? 'development' : 'production';
   var persistent = script.getAttribute('data-identity') === 'persistent';
   var permitted = !persistent && script.getAttribute('data-consent') !== 'required';
+  var verification = script.getAttribute("data-verify"), verificationSent = false;
   var persistentId;
   function identity() { if(!persistent)return undefined; if(!persistentId){try{persistentId=localStorage.getItem('pulse-visitor-'+site);if(!persistentId){persistentId=uid();localStorage.setItem('pulse-visitor-'+site,persistentId);}}catch(_){persistentId=uid();}} return persistentId; }
   var queue = [], timer, lastPage = '', session = uid(), lastActivity = Date.now(), destroyed = false;
@@ -27,7 +28,7 @@
     if (queue.length > 100) queue.shift();
     if (queue.length >= 20) flush(); else if (!timer) timer = setTimeout(flush, 1500);
   }
-  function page() { var path=cleanUrl(location.href); if (lastPage===path) return; if (!permitted||navigator.globalPrivacyControl) return; lastPage=path; track('pageview'); }
+  function page() { var path=cleanUrl(location.href); if (lastPage===path) return; if (!permitted||navigator.globalPrivacyControl) return; lastPage=path; track('pageview'); if(verification && !verificationSent){verificationSent=true;track('pulse.verify',{verification_token:verification});} }
   function send(batch, attempt) { var body=JSON.stringify({schemaVersion:1,siteId:site,environment:environment,events:batch});if(body.length>32000){if(batch.length>1){send(batch.slice(0,Math.floor(batch.length/2)),0);send(batch.slice(Math.floor(batch.length/2)),0);}return;}try{if(navigator.sendBeacon&&navigator.sendBeacon(endpoint,new Blob([body],{type:'text/plain'})))return;}catch(_){}try{fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/plain'},body:body,keepalive:true,credentials:'omit'}).then(function(r){if(!r.ok&&r.status>=500)throw new Error('Unavailable');}).catch(function(){if(attempt<2&&!destroyed)setTimeout(function(){send(batch,attempt+1);},1000*(attempt+1));});}catch(_){} }
   function flush() { clearTimeout(timer); timer=undefined; if(!permitted||navigator.globalPrivacyControl){queue=[];return;}while(queue.length)send(queue.splice(0,20),0); }
   function navPush() { var result=originalPush.apply(this,arguments);page();return result; }

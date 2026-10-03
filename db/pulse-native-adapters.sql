@@ -31,6 +31,9 @@ BEGIN
  IF row_data->>'tenant_id' IS NULL OR row_data->>'id' IS NULL THEN RETURN NEW; END IF;
  IF guard_field='__version' THEN
   IF TG_OP='UPDATE' AND row_data->>'version' IS NOT DISTINCT FROM previous_data->>'version' THEN RETURN NEW; END IF;
+ ELSIF guard_value='__not_null' THEN
+  IF row_data->>guard_field IS NULL THEN RETURN NEW; END IF;
+  IF TG_OP='UPDATE' AND previous_data->>guard_field IS NOT NULL THEN RETURN NEW; END IF;
  ELSIF guard_field<>'' THEN
   IF row_data->>guard_field IS DISTINCT FROM guard_value THEN RETURN NEW; END IF;
   IF TG_OP='UPDATE' AND previous_data->>guard_field IS NOT DISTINCT FROM guard_value THEN RETURN NEW; END IF;
@@ -54,7 +57,7 @@ BEGIN
  FOR item IN SELECT * FROM (VALUES
  ('messages','relay','message_sent','status','sent'),
  ('projects','lanes','project_created','',''),
- ('project_cards','lanes','task_completed','completed_at','true'),
+ ('project_cards','lanes','task_completed','completed_at','__not_null'),
  ('office_documents','office','document_saved','__version',''),
  ('assets','folders','file_uploaded','',''),
  ('vibez_events','vibez','event_created','',''),

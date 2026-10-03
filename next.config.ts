@@ -23,9 +23,6 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  webpack(config) {
-    if (process.env.PULSE_LOW_DISK === "1") config.cache = false;
-    return config;
-  },
+  ...(process.env.PULSE_LOW_DISK === "1" ? { webpack(config: any) { config.cache = false; return config; } } : {}),
 };
 export default nextConfig;

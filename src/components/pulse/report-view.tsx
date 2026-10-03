@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "./icon";
 import { PulseChart } from "./chart";
@@ -91,6 +91,7 @@ function BreakdownCard({
     </section>
   );
 }
+import { reportPath } from "@/lib/analytics/navigation";
 export function ReportView({
   view = "overview",
   demo = false,
@@ -121,6 +122,7 @@ export function ReportView({
 }) {
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
+  const embedded = usePathname().startsWith("/embed/");
   const router = useRouter(),
     search = useSearchParams(),
     query = parseReportQuery(new URLSearchParams(search.toString()));
@@ -144,11 +146,11 @@ export function ReportView({
   const link = (v: string) =>
     demo
       ? `/demo?view=${v}&${queryString(query)}`
-      : `/dashboard/${v}?${queryString(query)}${siteId ? `&site=${siteId}` : ""}`;
+      : `${reportPath(v,embedded)}?${queryString(query)}${siteId ? `&site=${siteId}` : ""}`;
   const update = (patch: Partial<ReportQuery>) => {
     const next = { ...query, ...patch };
     router.push(
-      `${demo ? `/demo?view=${view}&` : `/dashboard${view === "overview" ? "" : `/${view}`}?`}${queryString(next)}${siteId ? `&site=${siteId}` : ""}`,
+      `${demo ? `/demo?view=${view}&` : `${reportPath(view,embedded)}?`}${queryString(next)}${siteId ? `&site=${siteId}` : ""}`,
       { scroll: false },
     );
   };

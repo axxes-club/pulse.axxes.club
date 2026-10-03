@@ -1,3 +1,9 @@
-import Script from 'next/script';
-/** Call in an authenticated app layout using its validated organization context. */
-export function AXXESPulse({appKey,tenantId}:{appKey:string;tenantId:string}){return <Script key={`${appKey}:${tenantId}`} id={`pulse-${appKey}-${tenantId}`} src='https://pulse.axxes.app/axxes.v1.js' data-app={appKey} data-tenant={tenantId} strategy='afterInteractive'/>}
+"use client";
+import { useEffect } from 'react';
+/** Optional same-domain bootstrap; built-in apps use validated server-rendered public IDs. */
+export function AXXESPulse({appKey,tenantId}:{appKey:string;tenantId:string}){
+ useEffect(()=>{
+  const script=document.createElement('script');script.async=true;script.src='https://pulse.axxes.app/axxes.v1.js';script.dataset.app=appKey;script.dataset.tenant=tenantId;document.head.appendChild(script);
+  return ()=>{script.remove();const target=window as any;target.__axxesPulseGeneration=(target.__axxesPulseGeneration||0)+1;delete target.__axxesPulseSetup;if(target.pulse){target.pulse.flush();target.pulse.destroy()}};
+ },[appKey,tenantId]);return null;
+}

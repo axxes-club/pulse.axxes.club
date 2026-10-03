@@ -4,7 +4,7 @@ import { requireContext } from "@/lib/context";
 import { listSites } from "@/lib/analytics/sites";
 import { getEvents } from "@/lib/analytics/storage";
 import { parseReportQuery } from "@/lib/analytics/query";
-import { summarizeEvents } from "@/lib/analytics/metrics";
+import { summarizeEvents, filteredEvents } from "@/lib/analytics/metrics";
 import { ReportShell } from "./report-shell";
 import { ReportView } from "./report-view";
 import { getReportConfig } from "@/lib/analytics/config";
@@ -114,7 +114,7 @@ export async function Dashboard({
             funnels={config.funnels}
             goalNames={config.goals}
             canManage={["owner", "admin"].includes(ctx.role)}
-            events={view === "funnels" ? events.filter(e=>{const w=selectedWindow;const t=Date.parse(e.time);return t>=w.start&&t<w.end&&e.environment===query.environment&&(!query.source||query.source===e.source)&&(!query.path||query.path===e.path)&&(!query.country||query.country===e.country)}) : []}
+            events={view === "funnels" ? filteredEvents(events,query).filter(e=>{const t=Date.parse(e.time);return t>=selectedWindow.start&&t<selectedWindow.end}) : []}
             data={summarizeEvents(events, query, new Date(), {
               identityMode: selected.identityMode,
               goalNames: config.goals,
