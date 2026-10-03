@@ -57,6 +57,8 @@ BEGIN
  FOR item IN SELECT * FROM (VALUES
  ('messages','relay','message_sent','status','sent'),
  ('projects','lanes','project_created','',''),
+ ('manifest_stock_moves','manifest','inventory_moved','',''),
+ ('manifest_receipts','manifest','inventory_received','status','posted'),
  ('project_cards','lanes','task_completed','completed_at','__not_null'),
  ('office_documents','office','document_saved','__version',''),
  ('assets','folders','file_uploaded','',''),
