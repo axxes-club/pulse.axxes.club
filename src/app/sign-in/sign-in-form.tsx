@@ -20,7 +20,7 @@ export function SignInForm() {
     })
     setPending(false)
     if (error) return setError(error.message ?? "Could not sign in")
-    router.replace("/")
+    router.replace("/dashboard")
     router.refresh()
   }
 
