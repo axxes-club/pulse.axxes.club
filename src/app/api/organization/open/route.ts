@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { publicOrigin } from "@/lib/public-origin"
 import { switchOrganization } from "@/lib/actions/org"
+import { publicOrigin } from "@/lib/public-origin"
 
 /** A suite launch preference is revalidated by the existing server switch action. */
 export async function GET(request: Request) {
