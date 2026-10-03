@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { metadataPool } from "@/lib/analytics/postgres";
 import {
   validBridgeState,
+  validTenantPreference,
   cookieSignature,
   consumeHandoffSql,
 } from "@/lib/analytics/session-bridge";
@@ -33,7 +34,8 @@ export async function GET(request: NextRequest) {
       status: 400,
       headers: { "Cache-Control": "no-store" },
     });
-  const response = NextResponse.redirect("https://pulse.axxes.app/dashboard");
+  const tenant=request.cookies.get("__Host-pulse_tenant")?.value || "";
+  const response = NextResponse.redirect(validTenantPreference(tenant)?"https://pulse.axxes.app/api/organization/open?tenant="+tenant:"https://pulse.axxes.app/dashboard");
   response.cookies.set(
     "__Secure-better-auth.session_token",
     cookieSignature(session.token, secret),
@@ -47,6 +49,7 @@ export async function GET(request: NextRequest) {
     },
   );
   response.cookies.delete("__Host-pulse_bridge");
+  response.cookies.delete("__Host-pulse_tenant");
   response.headers.set("Cache-Control", "no-store");
   response.headers.set("Referrer-Policy", "no-referrer");
   return response;

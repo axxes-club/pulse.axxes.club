@@ -175,7 +175,7 @@ export function ReportShell({
           <div className="workspace-header-actions">
             {demo && <span className="demo-badge">◌ Demo workspace</span>}
             <Link href="/docs">Help & feedback</Link>
-            <ThemeToggle />
+            {!embedded && <ThemeToggle />}
           </div>
         </header>
         <main className="workspace-content">{children}</main>

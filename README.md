@@ -1,26 +1,9 @@
-# Pulse · AXXES
+# AXXES Pulse
 
-One product in the AXXES suite. The codename, tagline, and modules are defined in [`src/product.config.ts`](src/product.config.ts).
+Analytics at https://pulse.axxes.app: a public landing page and demo, intuitive app setup, organization-scoped reports, consent controls, and native AXXES integration.
 
-## How it fits together
+Develop with Node 24: `npm ci`, copy `.env.example` to `.env.local` with explicit identity and isolated analytics database URLs, then `npm run dev`. `npm test`, `npm run test:browser`, and `npm run build` verify the app. Never point analytics event storage at shared identity storage.
 
-- **Accounts**: better-auth on the shared AXXES database, so any members.axxes.club account can sign in with the same email and password.
-- **Workspaces**: every query is scoped to the signed-in user's primary tenant (`tenant_memberships`, see [`src/lib/context.ts`](src/lib/context.ts)).
-- **Data**: uses the tables members.axxes.club already migrated. The schema in `src/lib/db/schema` is a copy of the portal's, and this app runs **no migrations**. Change tables in the portal first, then copy the schema here.
-- **Resources**: each entry in `product.config.ts` gets list, create, edit, and delete screens generated from the table's columns ([`src/lib/resource.ts`](src/lib/resource.ts)). Foreign keys are checked against the tenant before any write.
+Metadata/source outbox migrations belong to the Members portal. Apply additive migrations with `scripts/pulse-migrate.mjs`; no schema push. Source SDK files and setup recipes are under `public/sdk` and served by `/docs`.
 
-## Develop
-
-```bash
-cp .env.example .env.local   # same DATABASE_URL and BETTER_AUTH_SECRET as members.axxes.club
-npm install --legacy-peer-deps
-npm run dev
-```
-
-## Deploy
-
-Vercel **Personal** team (`--scope personal-e870166f`). The commit author must be `viscasillas@me.com`, or Vercel blocks the deploy.
-
-```bash
-vercel deploy --prod --scope personal-e870166f
-```
+Production uses the existing GCP Cloud Run/Cloud SQL/load-balancer stack. Pushes to `deploy/gcp` invoke secured per-app Cloud Build, browser/unit/build checks, secret-layer scanning, immutable image release, readiness guards and rollback. Runtime secrets are mounted from Secret Manager. See [release notes](docs/release/pulse-analytics-2026-10-03.md), [integration inventory](docs/integration-matrix.md) and [GCP CI/CD](docs/GCP-CI-CD.md).

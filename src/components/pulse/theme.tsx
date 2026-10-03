@@ -4,7 +4,8 @@ import { Icon } from "./icon";
 export function ThemeToggle() {
   const [theme, setTheme] = useState("dark");
   useEffect(() => {
-    const t = localStorage.getItem("pulse-theme") || "dark";
+    let t="dark";try{t=localStorage.getItem("pulse-theme") || "dark"}catch{}
+    if(!["light","dark"].includes(t))t="dark";
     setTheme(t);
     document.documentElement.dataset.theme = t;
   }, []);
@@ -16,7 +17,7 @@ export function ThemeToggle() {
         const t = theme === "dark" ? "light" : "dark";
         setTheme(t);
         document.documentElement.dataset.theme = t;
-        localStorage.setItem("pulse-theme", t);
+        try{localStorage.setItem("pulse-theme", t)}catch{}
       }}
     >
       <Icon name={theme === "dark" ? "sun" : "moon"} />

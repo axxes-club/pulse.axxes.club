@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" style={{ "--product-accent": product.accent } as React.CSSProperties}>
+    <html lang="en" data-scroll-behavior="smooth" style={{ "--product-accent": product.accent } as React.CSSProperties}>
       <body className={`${sans.variable} ${mono.variable} min-h-dvh`}>{children}</body>
     </html>
   )

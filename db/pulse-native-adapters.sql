@@ -62,6 +62,7 @@ BEGIN
  ('assets','folders','file_uploaded','',''),
  ('vibez_events','vibez','event_created','',''),
  ('events','suite','event_published','status','published'),
+ ('attendees','suite','event_checked_in','status','checked_in'),
  ('orders','suite','order_captured','payment_status','captured'),
  ('tollbooth_payments','tollbooth','purchase','status','succeeded'),
  ('contacts','suite','contact_created','',''),
