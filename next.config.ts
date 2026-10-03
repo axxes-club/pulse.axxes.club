@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   async headers() {
     return [
-      {source:"/embed/:path*",headers:[{key:"Content-Security-Policy",value:"frame-ancestors https://members.axxes.club https://members.axxes.app https://axxes.app"}]},
+      {source:"/embed/:path*",headers:[{key:"Content-Security-Policy",value:"frame-ancestors https://members.axxes.club https://members.axxes.app https://axxes.app https://atelier.axxes.app"}]},
       {source:"/api/auth/bridge/:path*",headers:[{key:"Referrer-Policy",value:"no-referrer"},{key:"Cache-Control",value:"no-store"}]},
       {source:"/sdk/:path*",headers:[{key:"Access-Control-Allow-Origin",value:"*"},{key:"Cache-Control",value:"public, max-age=3600"}]},
       {
