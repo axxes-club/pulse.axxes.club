@@ -1,7 +1,7 @@
 # AXXES Pulse — analytics product design
 
 Date: 2026-10-03
-Status: Ready for user review; implementation has not started.
+Status: Original design approved. Integration and UX expansion added for review; implementation has not started.
 
 ## Intent and success
 
@@ -41,7 +41,31 @@ The overview shows visitors, sessions, pageviews, conversion rate, a comparable-
 
 Dedicated views cover realtime, pages, acquisition, events and conversions, ordered funnels, performance, and site settings. Business vitals remain in a separate workspace view. CSV exports honor current filters and organization permissions.
 
-Onboarding: add site → validate canonical origin and allowed domains → copy script or SDK integration → verify the first accepted event → open the report. Show installation status and a safe test event without inflating production metrics.
+Onboarding: add app → choose integration → copy setup → verify event → open analytics. Treat a tracked project as an app in the interface, while retaining site identifiers internally. Support websites, browser apps, server services, and native/mobile apps through the relevant collection method. Do not imply that every platform uses a browser script.
+
+### Integration center: any app, one clear path
+
+`/dashboard/integrations` is a working integration center, not a gallery of unsupported logos. Start with two choices: connect an AXXES app or connect another app. For AXXES, list available apps from the real organization catalog and prefill permitted setup. Report connected only after a verified event; installing a snippet alone is not a connection.
+
+For another app, ask for its name, platform, and production origin when applicable. Provide tailored installation recipes for plain HTML, React, Next.js, Vue, Svelte, Node.js, and HTTP API clients. The generic script supports other browser frameworks and hosted website builders through custom-code installation. A scoped server HTTP API supports services and native/mobile clients through their backend, with copyable curl, Python, and Swift/Kotlin request examples. These examples are recipes, not claims of published native SDKs. Never put a secret credential in mobile binaries or browser code. Native direct ingestion, if added later, requires a separate public-client abuse model.
+
+Each recipe shows only the relevant setup, with the project's identifier filled in, copy actions, file-placement guidance, and a visible next step. Put advanced consent, proxy, and manual event configuration behind labeled disclosure controls. React and Next.js use a typed provider/wrapper over the same SDK; Vue and Svelte use the generic SDK with documented lifecycle cleanup. Framework installation examples must compile and send a real fixture event. Package commands may reference only packages verified as published; until publication, offer the hosted script and downloadable/local SDK artifact honestly.
+
+Provide production and development environments with separate public identifiers, server credentials, installation status, and reports. Default reporting excludes development and verification events. Remember an unfinished setup so a user can resume without recreating a project. If no production domain is available for a backend/native project, use the authenticated server path rather than weakening browser origin checks.
+
+The verification screen distinguishes waiting, receiving, connected, and needs-attention. Match a short-lived verification token to an accepted persisted test event, scoped to organization, project, and environment. Show the last successful check and actionable diagnostics: wrong project identifier, disallowed origin, consent disabled, blocked request, invalid event, or missing server credentials. Do not claim visibility into a browser blocker unless the SDK diagnostics establish it. A live event inspector redacts sensitive fields and separates test traffic from production.
+
+After setup, offer one optional event recipe: signup, purchase, or feature use. Generate a small, platform-appropriate call using the chosen event name and safe sample properties. Purchases requiring authoritative revenue use the trusted server path. Users can turn observed events into conversion goals without writing a second tracking call. Event naming help and metric definitions appear where used rather than requiring users to read the docs first.
+
+### Intuitive reporting and navigation
+
+The default sidebar exposes Overview, Live, Audience, Acquisition, Events, and Integrations. Group advanced funnels, retention, and performance under Explore; keep settings secondary. Site/environment selection is distinct from organization selection. Use plain labels such as Visitors and Where people come from; display definitions and counting limitations on demand.
+
+The overview answers three questions in order: how much activity, where it comes from, and whether it converts. Every summary leads to a report with the same filters. Active filter chips can be removed individually or reset together. Comparisons retain equal time ranges and labeled denominators. Clicking a chart point shows its time and actual values, with an equivalent keyboard interaction and tabular alternative.
+
+Provide useful defaults, date shortcuts, visible loading/freshness, and a compact data-status message. First-time users see setup guidance; returning users with real data land directly in the overview. Persistent theme preferences, restrained motion, consistent actions, and legible empty/error states apply to onboarding as well as reports. Integration setup must work at phone widths without clipped snippets or hidden copy controls.
+
+Quality acceptance: a new user can choose the right installation method without understanding the ingestion architecture, reach a verified test event from a supported recipe, find their source traffic, and create a conversion goal. Validate those tasks with browser scenarios; do not assert world-class usability solely from appearance.
 
 Empty reports explain how to connect a site. Failed queries show a retry action; failed collection shows setup diagnostics. Missing permissions, deleted sites, and unavailable integrations have explicit states. Never fill missing production data with samples.
 
@@ -53,7 +77,7 @@ Embedded views use the portal's warm neutrals, Inter, square corners, and curren
 
 ## Collection and SDK contract
 
-Serve an asynchronous, versioned tracker and provide a typed JavaScript SDK with `page`, `track`, and performance reporting. Handle SPA navigation without duplicate pageviews. Flush bounded batches on lifecycle transitions using `sendBeacon` with fetch fallback; tracking failures must not break the host website.
+Serve an asynchronous, versioned tracker and provide a typed JavaScript SDK with `page`, `track`, and performance reporting. Include framework adapters, a stable versioned server HTTP event contract, and tested installation recipes from the integration center. Handle SPA navigation without duplicate pageviews. Flush bounded batches on lifecycle transitions using `sendBeacon` with fetch fallback; tracking failures must not break the host website. Support a same-origin proxy recipe for browser apps without promising it bypasses every blocker.
 
 Public ingestion receives a public site identifier, event identifier, event name, occurrence time, sanitized page path/referrer, allowlisted campaign fields, and bounded event properties. The server resolves the site and organization; clients cannot select an organization by submitting its identifier. Reject disabled sites, disallowed origins, oversized payloads, invalid timestamps, unsupported property types, and excess rates. Origin checks reduce abuse but do not authenticate public browser events; the public identifier is not a secret. Deduplicate event identifiers and distinguish rejected, accepted, and persisted status.
 
@@ -63,7 +87,7 @@ Trusted AXXES business events are server-side, authenticated with scoped credent
 
 ## Data and report semantics
 
-Analytics metadata associates sites, allowed origins, timezone, collection mode, goals, retention settings, and integration state with a shared AXXES organization. Analytics storage contains validated events, session/counting keys, performance samples, and derived hourly/daily aggregates. Tenant identity is verified through membership before every read, mutation, and export. Public ingestion and public demo are separate from authenticated reporting.
+Analytics metadata associates sites, allowed origins, timezone, collection mode, goals, retention settings, environments, resumable setup, verification tokens, and integration state with a shared AXXES organization. Analytics storage contains validated events, environment identifiers, session/counting keys, performance samples, and derived hourly/daily aggregates. Tenant identity is verified through membership before every read, mutation, and export. Public ingestion and public demo are separate from authenticated reporting. Project/platform type determines whether browser origins or trusted server credentials are required.
 
 Pageviews count accepted page events. Sessions use a documented 30-minute inactivity window within site scope. Visitors are estimated distinct counting keys within the reported period; do not add daily distinct counts to estimate a multi-day total. Conversion rate states its denominator and deduplicates goal completions per session. Attribution starts with session entry source and explicit UTM fields; label direct/unknown traffic honestly.
 
