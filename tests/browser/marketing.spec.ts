@@ -33,3 +33,6 @@ test("mobile landing is usable and theme preference persists", async ({
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
+test('landing and reports reflow with doubled text on mobile and desktop',async({page})=>{
+ for(const width of [390,1440]){await page.setViewportSize({width,height:1000});for(const path of ['/','/demo']){await page.goto(path);await page.evaluate(()=>{const sizes=Array.from(document.querySelectorAll<HTMLElement>('body *')).map(el=>({el,size:parseFloat(getComputedStyle(el).fontSize)}));for(const {el,size} of sizes)el.style.fontSize=`${size*2}px`});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${path} at ${width}px with 200% text`).toBeTruthy()}}
+});

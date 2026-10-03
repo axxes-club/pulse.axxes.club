@@ -58,3 +58,9 @@ it("acknowledges durable PostgreSQL writes, deduplicates retries, and never stor
   expect(JSON.stringify(result.rows)).not.toContain("password");
   await db.close();
 }, 20000);
+it('rolls back the entire batch and rate allocation when storage fails before commit',async()=>{
+ const db=new PGlite();await db.exec(readFileSync('db/pulse-analytics.sql','utf8'));let inserts=0;
+ const connection={query:async(text:string,args?:unknown[])=>{if(text.startsWith('insert into pulse_events')&&++inserts===2)throw new Error('Simulated storage failure');const r=await db.query(text,args);return {rows:r.rows,rowCount:r.affectedRows??null}},release:()=>{}};
+ process.env.PULSE_HASH_SECRET='test-only-secret-at-least-32-characters-long';
+ try{await expect(persistBatch({id:'11111111-1111-4111-8111-111111111111',tenantId:'22222222-2222-4222-8222-222222222222',environment:'production',collection:'browser',identityMode:'ephemeral'} as any,{siteId:'fixture',environment:'production',events:['a','b'].map(id=>({id,name:'pageview',timestamp:new Date().toISOString(),url:'https://example.com/'}))},{ip:'192.0.2.1',userAgent:'Owned fixture'},false,{connect:async()=>connection})).rejects.toThrow('Simulated storage failure');expect((await db.query('select * from pulse_events')).rows).toHaveLength(0);expect((await db.query('select * from pulse_rate_limits')).rows).toHaveLength(0)}finally{await db.close()}
+},20000);
