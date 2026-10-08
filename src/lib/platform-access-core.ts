@@ -8,7 +8,7 @@ export async function evaluateAccess(db:Sql,userId:string,organizationId?:string
  const version=String(u.version);
  if(organizationId){
   const t=(await query(db,`SELECT status,deleted_at FROM tenants WHERE id=$1`,[organizationId])).rows[0];
-  if(!t||t.deleted_at||['suspended','cancelled'].includes(String(t.status)))return {allowed:false,reason:'organization_suspended',version};
+  if(!t||t.deleted_at||String(t.status)!=='active')return {allowed:false,reason:'organization_suspended',version};
   const m=(await query(db,`SELECT id FROM tenant_memberships WHERE user_id=$1 AND tenant_id=$2 AND deleted_at IS NULL`,[userId,organizationId])).rows[0];
   if(!m)return {allowed:false,reason:'membership_missing',version};
   if(serviceId){const organizationPolicy=(await query(db,`SELECT allowed FROM platform_organization_entitlements WHERE tenant_id=$1 AND service_id=$2`,[organizationId,serviceId])).rows[0];if(organizationPolicy?.allowed===false)return {allowed:false,reason:'service_denied',version};const e=(await query(db,`SELECT allowed FROM platform_entitlements WHERE user_id=$1 AND tenant_id=$2 AND service_id=$3`,[userId,organizationId,serviceId])).rows[0];if(e?.allowed===false)return {allowed:false,reason:'service_denied',version};}
