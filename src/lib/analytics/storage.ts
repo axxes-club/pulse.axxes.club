@@ -1,4 +1,4 @@
-import {consumeAdmission} from "@/lib/security/admission";
+import {consumeAdmissions} from "@/lib/security/admission";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import type { AnalyticsEvent, AnalyticsReport } from "./types";
@@ -48,9 +48,7 @@ export async function persistBatch(
     rotation,
   );
   if (!database) {
-    await consumeAdmission('global:collection', 30000, 60, batch.events.length);
-    await consumeAdmission('tenant:collection:'+site.tenantId, 12000, 60, batch.events.length);
-    await consumeAdmission('site:collection:'+site.id, 6000, 60, batch.events.length);
+    await consumeAdmissions([['global:collection',30000,60,batch.events.length],['tenant:collection:'+site.tenantId,12000,60,batch.events.length],['site:collection:'+site.id,6000,60,batch.events.length]]);
   }
   const client = await (database || analyticsPool()).connect();
   let accepted = 0,
