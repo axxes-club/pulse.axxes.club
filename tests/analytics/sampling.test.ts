@@ -117,3 +117,32 @@ it("keeps live activity exact on a sampled report and serves refreshes from the 
     await db.close();
   }
 }, 30000);
+
+it("keeps historical recent events on cached and sampled reports", async () => {
+  const { buildReport } = await import("../../src/lib/analytics/storage");
+  const { db, pool } = await fixture(100, 3, 300);
+  try {
+    const now = new Date();
+    const from = new Date(now.getTime()-3*86400000).toISOString().slice(0,10);
+    const to = new Date(now.getTime()-86400000).toISOString().slice(0,10);
+    const q = { range: 3, from, to, source: "", metric: "visitors", environment: "production", compare: true, timezone: "UTC" } as any;
+    const first = await buildReport(site, q, [], now, pool as any);
+    expect(first.recent.length).toBeGreaterThan(0);
+    const cached = await buildReport(site, q, [], now, pool as any);
+    expect(cached.recent.map(e=>e.id).sort()).toEqual(first.recent.map(e=>e.id).sort());
+  } finally { await db.close(); }
+}, 30000);
+
+it("filters exact live activity before limiting recent traffic", async () => {
+  const { buildReport } = await import("../../src/lib/analytics/storage");
+  const { db, pool } = await fixture(100, 3, 300);
+  try {
+    await db.query("insert into pulse_events(site_id,tenant_id,environment,event_id,name,occurred_at,visitor_key,session_key,path,source) select $1,$2,'production','noise'||g,'pageview',now()-interval '1 minute',md5('n'||g),md5('ns'||g),'/', 'Noise' from generate_series(1,600) g", [site.id, site.tenantId]);
+    await db.query("insert into pulse_events(site_id,tenant_id,environment,event_id,name,occurred_at,visitor_key,session_key,path,source) values($1,$2,'production','target','pageview',now()-interval '270 seconds',md5('target'),md5('target'),'/', 'Target')", [site.id, site.tenantId]);
+    const q = { range: 7, source: "Target", metric: "visitors", environment: "production", compare: true, timezone: "UTC" } as any;
+    const now = new Date();
+    await buildReport(site, q, [], now, pool as any);
+    const report = await buildReport(site, q, [], now, pool as any);
+    expect(report.live.map(e=>e.id)).toEqual(["target"]);
+  } finally { await db.close(); }
+}, 30000);

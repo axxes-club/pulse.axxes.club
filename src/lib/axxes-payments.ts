@@ -152,3 +152,9 @@ export function changeSubscription(id: string, lookupKey: string) {
     body: JSON.stringify({ mode: paymentsMode(), lookupKey }),
   })
 }
+
+/** Expires an open checkout, or returns completion if the buyer won the race. */
+export function expireCheckout(id: string) {
+  if (!/^cs_(test|live)_[A-Za-z0-9]{20,250}$/.test(id)) throw new PaymentsError(400,"Invalid checkout");
+  return call<CheckoutStatus>(`/api/v1/checkouts/${id}`,{method:"DELETE"});
+}

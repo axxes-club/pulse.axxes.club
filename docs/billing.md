@@ -56,6 +56,7 @@ Collect / server events / native outbox ──allowance(tenant)──▶ persist
 - A plan is written only from a snapshot fetched from Payments with Pulse's key. Events are
   verified (`AXXES-Payments-Signature`) and then re-read, never applied from their body. An ended
   subscription never closes access that a different live subscription still pays for.
+- One tenant lock serializes checkout creation. A persisted full request and stable key recover lost responses. Plan reselection expires the old session first; completion races reconcile the subscription and ask the user to refresh. Unresolved reservations older than 23 hours need operator recovery because Stripe may discard idempotency keys after 24 hours.
 - Billing actions need a same-origin request from an owner or admin of the active organization.
 
 ## Cost model (estimate, not measured)
@@ -82,7 +83,7 @@ cover that. Measure real row size and request CPU after launch, then replace the
 
 ## Reports at any volume
 
-Report cost no longer grows with traffic. A report reads at most about 90k raw events.
+Report memory and returned rows are bounded, while database scan cost still depends on traffic and filters. A window targets 90k events, accepts at most 112,500 rows, and retries at most six times (at most 675,006 returned rows across attempts). Exact live/recent queries return at most 130 rows after filtering. These limits do not cap database rows scanned or CPU.
 
 - When a window holds more than that (estimated from `pulse_daily_aggregates`), Pulse reads a fixed
   share of visitors and scales the counts up.
@@ -91,16 +92,16 @@ Report cost no longer grows with traffic. A report reads at most about 90k raw e
 - Rates and performance percentiles are not scaled. Live activity and recent events always come
   from a separate exact query.
 - The report says "Estimated from N% of visitors", and CSV exports carry the share.
-- `pulse_events_sample_idx` makes a sampled read touch only the sampled rows. On 300k events, a
+- `pulse_events_sample_idx` supports visitor-bucket selection; planner choices, time windows and exact activity filters can still scan more rows than returned. On 300k events, a
   1.5% sample read about 4.8k rows in 6 ms (PGlite).
 - Reports are cached for 20 s per instance, so the 10-second refresh on Overview and Live doesn't
   recompute the window. Live activity is re-read on every refresh.
 
-The sample index adds about 70 B per stored event. The cost model's ~700 B per row includes it.
+The sample index was estimated at about 70 B per stored event. The session-entry index adds further storage for pageviews; the ~700 B cost assumption has not been remeasured with both indexes. Validate storage and query CPU on production PostgreSQL before treating the margin table as measured.
 
 ## Launch checklist (needs the owner's go-ahead: production money, secrets and deploys)
 
-1. Payments: merge and deploy the in-place plan change endpoint (payments.axxes.app branch
+1. Payments: merge and deploy the in-place plan change and checkout expiration endpoints (payments.axxes.app branch
    `feat/subscription-change`).
 2. Payments: add `pulse` to `PAYMENTS_PRODUCTS` in `payments-env`. It needs new random live and test
    keys and an `eventSecret`, with `returnOrigins` `https://pulse.axxes.app` and

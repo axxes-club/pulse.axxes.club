@@ -19,7 +19,7 @@ export async function GET(
       `Pageviews,${report.pageviews}`,
       `Conversions,${report.conversions}`,
       `Conversion rate,${report.conversionRate.toFixed(2)}`,
-      ...(report.sample ? [`Estimated from share of visitors,${report.sample.toFixed(4)}`] : []),
+      ...(report.sample ? [`Estimated from share of visitors,${report.sample.toFixed(6)}`] : []),
     ].join("\n");
     return new Response(csv, {
       headers: {

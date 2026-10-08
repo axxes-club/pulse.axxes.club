@@ -244,7 +244,7 @@ export function ReportView({
               : "Explore what matters. Keep your filters as you go."}
             {report.sample ? (
               <span className="sample-note" title="Large periods are computed from a fixed share of visitors and scaled up. Live activity and recent events are exact.">
-                {" "}Estimated from {report.sample >= 0.1 ? Math.round(report.sample * 100) : (report.sample * 100).toFixed(1)}% of visitors.
+                {" "}Estimated from {report.sample >= 0.1 ? Math.round(report.sample * 100) : (report.sample * 100).toFixed(report.sample < 0.001 ? 2 : 1)}% of visitors.
               </span>
             ) : null}
           </p>

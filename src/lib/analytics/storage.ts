@@ -7,7 +7,7 @@ import type { AnalyticsSite } from "./sites";
 import { analyticsPool } from "./postgres";
 import { reportWindow } from "./timezone";
 import { AnalyticsError } from "./access";
-import { summarizeEvents, filteredEvents } from "./metrics";
+import { summarizeEvents } from "./metrics";
 import type { ReportQuery } from "./query";
 import { admit, isBillable, usageMonth, type Allowance } from "@/lib/billing/entitlement";
 export async function persistBatch(
@@ -64,13 +64,25 @@ export async function persistBatch(
     const month = usageMonth(now);
     let events = batch.events;
     if (allowance) {
+      // Establish and lock one tenant/month row before admitting any concurrent batch.
+      await client.query("insert into pulse_usage(tenant_id,month) values($1,$2) on conflict(tenant_id,month) do nothing", [site.tenantId, month]);
       const usage = await client.query(
-        "select billable,stored from pulse_usage where tenant_id=$1 and month=$2",
+        "select billable,stored from pulse_usage where tenant_id=$1 and month=$2 for update",
         [site.tenantId, month],
       );
       const current = { billable: Number(usage.rows[0]?.billable || 0), stored: Number(usage.rows[0]?.stored || 0) };
+      const existing = await client.query("select event_id from pulse_events where site_id=$1 and event_id=any($2::text[])", [site.id, events.map(e=>e.id)]);
+      const seen = new Set<string>(existing.rows.map(row=>row.event_id));
+      let incomingBillable = 0;
+      let availableStored = allowance.stored === null ? Infinity : Math.max(0, allowance.stored-current.stored);
+      events = events.filter(event => {
+        if (seen.has(event.id)) return true;
+        if (isBillable(event.name)) { seen.add(event.id); incomingBillable++; availableStored--; return true; }
+        if (availableStored <= 0) return false;
+        seen.add(event.id); availableStored--; return true;
+      });
       const decision = admit(current, allowance);
-      if (decision === "refuse") {
+      if (decision === "refuse" || (allowance.billable !== null && current.billable+incomingBillable>allowance.billable)) {
         await client.query(
           "insert into pulse_usage(tenant_id,month,refused) values($1,$2,$3) on conflict(tenant_id,month) do update set refused=pulse_usage.refused+excluded.refused,updated_at=now()",
           [site.tenantId, month, events.length],
@@ -82,7 +94,7 @@ export async function persistBatch(
           402,
         );
       }
-      if (decision === "accept_billable_only") events = events.filter((e) => isBillable(e.name));
+
     }
     let billable = 0,
       stored = 0;
@@ -231,12 +243,32 @@ export async function loadEvents(
   throw new AnalyticsError("This report window is too large to load right now. Choose a shorter range.", 422);
 }
 
-/** The newest events, never sampled: live activity and the recent list stay exact on every plan. */
-export async function latestEvents(site: AnalyticsSite, before: Date, pool: Pool = analyticsPool()) {
-  const result = await pool.query(
-    `select ${columns} from pulse_events where tenant_id=$1 and site_id=$2 and environment=$3 and occurred_at>=$4::timestamptz and occurred_at<$5::timestamptz order by occurred_at desc limit 500`,
-    [site.tenantId, site.id, site.environment, new Date(before.getTime() - 86_400_000), before],
-  );
+/** Exact activity is filtered before limiting, including entry attribution for source/campaign. */
+export async function latestEvents(site: AnalyticsSite, before: Date, pool: Pool = analyticsPool(), query?: ReportQuery, from?: Date, to?: Date, attributionFrom?: Date) {
+  const filters: Partial<ReportQuery> = query || { source: "", environment: site.environment };
+  if (filters.environment !== site.environment) return [];
+  const args: unknown[] = [site.tenantId, site.id, site.environment, new Date(before.getTime()-300_000), before, from || new Date(before.getTime()-86_400_000), to || before, attributionFrom || new Date(0)];
+  const conditions = ["name<>'pulse.verify'"];
+  for (const field of ["source", "path", "country", "device"] as const) {
+    if (filters[field]) { args.push(filters[field]); conditions.push(`${field}=$${args.length}`); }
+  }
+  if (filters.campaign) { args.push(filters.campaign); conditions.push(`coalesce(properties->>'utm_campaign','Unspecified')=$${args.length}`); }
+  const result = await pool.query(`with attributed as not materialized (
+    select e.event_id as id,e.name,e.occurred_at as time,e.visitor_key as visitor,e.session_key as session,e.path,
+      coalesce(entry.source,e.source) as source,e.country,e.device,e.environment,
+      e.properties || coalesce(entry.utm,'{}'::jsonb) as properties
+    from pulse_events e left join lateral (
+      select p.source,(select jsonb_object_agg(key,value) from jsonb_each(p.properties) where key like 'utm_%') as utm
+      from pulse_events p where p.tenant_id=e.tenant_id and p.site_id=e.site_id and p.environment=e.environment
+        and p.session_key=e.session_key and p.name='pageview' and p.occurred_at>=$8 and p.occurred_at<case when e.occurred_at<$7 then $7 else $5 end order by p.occurred_at asc limit 1
+    ) entry on true
+    where e.tenant_id=$1 and e.site_id=$2 and e.environment=$3
+      and ((e.occurred_at>=$4 and e.occurred_at<$5) or (e.occurred_at>=$6 and e.occurred_at<$7))
+  ), matched as not materialized (select * from attributed where ${conditions.join(" and ")})
+  (select * from matched where time>=$4 and time<$5 order by time desc,id limit 100)
+  union
+  (select * from matched where time>=$6 and time<$7 order by time desc,id limit 30)
+  order by time desc,id`, args);
   return toEvents(result.rows);
 }
 
@@ -262,21 +294,18 @@ export async function buildReport(
   const key = JSON.stringify([site.id, site.environment, query, goalNames]);
   const cached = reports.get(key);
   let report: AnalyticsReport;
-  let fresh = false;
   if (cached && now.getTime() - cached.at < REPORT_TTL_MS) report = cached.report;
   else {
-    fresh = true;
-    const { events, sample } = await loadEvents(site, new Date(window.previousStart), new Date(now.getTime() + 60_000), pool, limit);
+    const { events, sample } = await loadEvents(site, new Date(window.previousStart), new Date(window.end), pool, limit);
     report = summarizeEvents(events, query, now, { identityMode: site.identityMode, goalNames, sample });
     if (reports.size > 500) reports.clear();
     reports.set(key, { at: now.getTime(), report });
   }
-  if (fresh && !report.sample) return report;
   // Live and recent activity come from an exact query, filtered the same way as the report.
-  const latest = filteredEvents(await latestEvents(site, new Date(now.getTime() + 60_000), pool), query);
+  const latest = await latestEvents(site, now, pool, query, new Date(window.start), new Date(window.end), new Date(window.previousStart));
   return {
     ...report,
-    live: latest.filter((e) => Date.parse(e.time) >= now.getTime() - 300_000).slice(0, 100),
+    live: latest.filter((e) => Date.parse(e.time) >= now.getTime() - 300_000 && Date.parse(e.time)<now.getTime()).slice(0, 100),
     recent: latest.filter((e) => Date.parse(e.time) >= window.start && Date.parse(e.time) < window.end).slice(0, 30),
     updatedAt: now.toISOString(),
   };

@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import "server-only";
 import { z } from "zod";
 import { metadataPool, analyticsPool } from "@/lib/analytics/postgres";
@@ -21,8 +22,7 @@ const columns = `tenant_id as "tenantId", trial_ends_at as "trialEndsAt", subscr
  * The organization's billing row. The first time Pulse sees an organization its 30-day
  * trial starts, so every existing and new organization gets the same trial exactly once.
  */
-export async function billingRow(tenantId: string): Promise<BillingRow> {
-  const pool = metadataPool();
+export async function billingRow(tenantId: string, pool: Pick<PoolClient,"query"> = metadataPool()): Promise<BillingRow> {
   const existing = await pool.query<BillingRow>(`select ${columns} from pulse_billing where tenant_id=$1`, [tenantId]);
   if (existing.rows[0]) return existing.rows[0];
   await pool.query("insert into pulse_billing(tenant_id) values($1) on conflict(tenant_id) do nothing", [tenantId]);
@@ -83,11 +83,11 @@ const reference = z.string().uuid();
  * Records a subscription snapshot that was read from AXXES Payments on the server. The snapshot
  * is the only writer of plan state; browsers and redirects only ever point at one.
  */
-export async function applySubscription(snapshot: SubscriptionSnapshot, actor: string) {
+export async function applySubscription(snapshot: SubscriptionSnapshot, actor: string, heldClient?: PoolClient) {
   if (snapshot.product !== "pulse" || !reference.safeParse(snapshot.reference).success) return { applied: false };
   const tenantId = snapshot.reference;
   const parsed = parseLookupKey(snapshot.lookup_key);
-  const client = await metadataPool().connect();
+  const client = heldClient || await metadataPool().connect();
   try {
     await client.query("begin");
     await client.query("insert into pulse_billing(tenant_id) values($1) on conflict(tenant_id) do nothing", [tenantId]);
@@ -141,7 +141,7 @@ export async function applySubscription(snapshot: SubscriptionSnapshot, actor: s
     await client.query("rollback");
     throw e;
   } finally {
-    client.release();
+    if (!heldClient) client.release();
   }
 }
 
@@ -170,4 +170,33 @@ export async function setOwnerGrant(tenantId: string, userId: string, granted: b
   );
   await audit(tenantId, granted ? "owner_access_granted" : "owner_access_removed", userId);
   forget(tenantId);
+}
+
+/** A session lock survives the reservation commit before Payments is contacted. It also covers
+ * concurrent administrators and app instances. Destroy a connection if unlock fails. */
+export async function withCheckoutLock<T>(tenantId: string, work: (reservation: {
+  row(): Promise<BillingRow>;
+  apply(snapshot: SubscriptionSnapshot, actor: string): ReturnType<typeof applySubscription>;
+  load(): Promise<import('./checkout-reservation').CheckoutReservation|null>;
+  save(value: import('./checkout-reservation').CheckoutReservation|null): Promise<void>;
+}) => Promise<T>): Promise<T> {
+  await billingRow(tenantId);
+  const client = await metadataPool().connect();
+  let locked = false;
+  try {
+    await client.query("select pg_advisory_lock(hashtextextended($1, 824893))",[tenantId]);
+    locked = true;
+    return await work({
+      row: () => billingRow(tenantId,client),
+      apply: (snapshot,actor) => applySubscription(snapshot,actor,client),
+      load: async () => (await client.query("select checkout_reservation from pulse_billing where tenant_id=$1",[tenantId])).rows[0]?.checkout_reservation ?? null,
+      save: async value => { await client.query("update pulse_billing set checkout_reservation=$2::jsonb,updated_at=now() where tenant_id=$1",[tenantId,value ? JSON.stringify(value) : null]); },
+    });
+  } finally {
+    if (locked) {
+      try { await client.query("select pg_advisory_unlock(hashtextextended($1, 824893))",[tenantId]); }
+      catch (error) { client.release(true); throw error; }
+    }
+    client.release(!locked);
+  }
 }

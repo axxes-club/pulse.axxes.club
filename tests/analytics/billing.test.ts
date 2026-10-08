@@ -183,6 +183,15 @@ describe("metered collection", () => {
     }
   }, 20000);
 
+  it("refuses a batch that would cross the billable ceiling", async () => {
+    const { db, send, usage } = await fixture();
+    try {
+      await send(["pageview"], { billable: 2, stored: 8 });
+      await expect(send(["pageview", "pageview"], { billable: 2, stored: 8 })).rejects.toMatchObject({ status: 402 });
+      expect(await usage()).toEqual({ billable: 1, stored: 1, refused: 2 });
+    } finally { await db.close(); }
+  }, 20000);
+
   it("refuses an organization without a plan before touching storage", async () => {
     const { db, send } = await fixture();
     try {
