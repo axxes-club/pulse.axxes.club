@@ -62,11 +62,13 @@
         },
         {
           "name": "Run existing feature tests",
-          "run": "npm test",
+          "run": "node -e 'require(\"node:fs\").writeFileSync(\"/tmp/pulse-ci-pg.json\", JSON.stringify({DATABASE_URL: process.env.STORAGE_TEST_DATABASE_URL, ANALYTICS_DATABASE_URL: process.env.STORAGE_TEST_DATABASE_URL}))'\nnpm test",
           "env": {
             "STORAGE_TEST_DATABASE_URL": "postgresql://ci:ci@127.0.0.1:5432/ci",
             "COMMERCE_TEST_DATABASE_URL": "postgresql://ci:ci@127.0.0.1:5432/ci",
-            "FINANCIAL_TEST_DATABASE_URL": "postgresql://ci:ci@127.0.0.1:5432/ci"
+            "FINANCIAL_TEST_DATABASE_URL": "postgresql://ci:ci@127.0.0.1:5432/ci",
+            "PULSE_QUOTA_PG_CONFIG": "/tmp/pulse-ci-pg.json",
+            "PULSE_QUOTA_PG_PORT": "5432"
           }
         },
         {

@@ -2,14 +2,16 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { requireContext } from "@/lib/context";
 import { listSites } from "@/lib/analytics/sites";
-import { getEvents } from "@/lib/analytics/storage";
+import { buildReport, loadEvents } from "@/lib/analytics/storage";
 import { parseReportQuery } from "@/lib/analytics/query";
 import { summarizeEvents, filteredEvents } from "@/lib/analytics/metrics";
+import type { AnalyticsEvent, AnalyticsReport } from "@/lib/analytics/types";
 import { ReportShell } from "./report-shell";
 import { ReportView } from "./report-view";
 import { getReportConfig } from "@/lib/analytics/config";
 import { reportWindow } from "@/lib/analytics/timezone";
 import { Icon } from "./icon";
+import { BillingNotice } from "./billing-notice";
 export async function Dashboard({
   view = "overview",
   search,
@@ -21,6 +23,7 @@ export async function Dashboard({
   if (view === "integrations")
     return (
       <ReportShell view={view} organization={ctx.tenant.name} context={ctx}>
+        <BillingNotice tenantId={ctx.tenant.id} />
         <Suspense>
           <ReportView view={view} organizationKey={ctx.tenant.id} />
         </Suspense>
@@ -54,16 +57,26 @@ export async function Dashboard({
       windowMs: number;
     }>;
   } = { goals: [], funnels: [] };
-  let events: Awaited<ReturnType<typeof getEvents>> = [];
+  let events: AnalyticsEvent[] = [];
+  let report: AnalyticsReport | null = view === "settings" ? summarizeEvents([], query, new Date()) : null;
   if (selected && !error && view !== "settings") {
     try {
-      [events, config] = await Promise.all([
-        getEvents(selected, query.range,new Date(selectedWindow.previousStart)),
-        getReportConfig(selected.publicId),
-      ]);
-    } catch {
+      config = await getReportConfig(selected.publicId);
+      if (view === "funnels") {
+        // Funnels need the ordered events themselves; sampled windows keep whole visitors.
+        const loaded = await loadEvents(selected, new Date(selectedWindow.previousStart), new Date(Date.now() + 60_000));
+        events = loaded.events;
+        report = summarizeEvents(events, query, new Date(), {
+          identityMode: selected.identityMode,
+          goalNames: config.goals,
+          sample: loaded.sample,
+        });
+      } else report = await buildReport(selected, query, config.goals);
+    } catch (e) {
       error =
-        "Pulse could not load your analytics. Check storage configuration or try again.";
+        e instanceof Error && "status" in e && e.status === 422
+          ? e.message
+          : "Pulse could not load your analytics. Check storage configuration or try again.";
     }
   }
   return (
@@ -77,6 +90,7 @@ export async function Dashboard({
       }))}
       selectedSiteId={selected?.publicId}
     >
+      <BillingNotice tenantId={ctx.tenant.id} />
       {error ? (
         <div className="empty-report">
           <Icon name="help" size={35} />
@@ -86,7 +100,7 @@ export async function Dashboard({
             Try again
           </Link>
         </div>
-      ) : !selected ? (
+      ) : !selected || !report ? (
         <div className="empty-report">
           <Icon name="pulse" size={35} />
           <h2>Your app’s next chapter starts here.</h2>
@@ -115,10 +129,7 @@ export async function Dashboard({
             goalNames={config.goals}
             canManage={["owner", "admin"].includes(ctx.role)}
             events={view === "funnels" ? filteredEvents(events,query).filter(e=>{const t=Date.parse(e.time);return t>=selectedWindow.start&&t<selectedWindow.end}) : []}
-            data={summarizeEvents(events, query, new Date(), {
-              identityMode: selected.identityMode,
-              goalNames: config.goals,
-            })}
+            data={report!}
           />
         </Suspense>
       )}

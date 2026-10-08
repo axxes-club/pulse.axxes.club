@@ -33,6 +33,10 @@ DO $$ BEGIN
  END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS pulse_events_report_idx ON pulse_events(tenant_id,site_id,environment,occurred_at);
+-- Visitor-sampled report reads (src/lib/analytics/storage.ts BUCKET); keep the expression identical.
+CREATE INDEX IF NOT EXISTS pulse_events_sample_idx ON pulse_events(tenant_id,site_id,environment,(('x'||substr(visitor_key,1,3))::bit(12)::int),occurred_at);
+-- Entry attribution for exact filtered live/recent queries.
+CREATE INDEX IF NOT EXISTS pulse_events_session_idx ON pulse_events(tenant_id,site_id,environment,session_key,occurred_at) WHERE name='pageview';
 CREATE TABLE IF NOT EXISTS pulse_rate_limits (key text PRIMARY KEY, count integer NOT NULL, expires_at timestamptz NOT NULL);
 CREATE TABLE IF NOT EXISTS pulse_daily_aggregates (
  tenant_id uuid NOT NULL,site_id uuid NOT NULL,environment text NOT NULL,day date NOT NULL,
@@ -40,4 +44,13 @@ CREATE TABLE IF NOT EXISTS pulse_daily_aggregates (
  PRIMARY KEY(site_id,environment,day)
 );
 CREATE TABLE IF NOT EXISTS pulse_aggregate_state (id integer PRIMARY KEY CHECK(id=1),watermark timestamptz NOT NULL,last_completed_at timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS pulse_usage (
+ tenant_id uuid NOT NULL,
+ month date NOT NULL,
+ billable bigint NOT NULL DEFAULT 0,
+ stored bigint NOT NULL DEFAULT 0,
+ refused bigint NOT NULL DEFAULT 0,
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,month)
+);
 COMMIT;

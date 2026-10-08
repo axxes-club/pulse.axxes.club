@@ -76,3 +76,63 @@ html[data-theme="light"]{color-scheme:light;--bg:#f8f9fc;--panel:#fff;--panel-2:
 .workspace-header-actions,.integration-intro{flex-wrap:wrap}
 @media(max-width:700px){.workspace-header{min-height:58px}}
 .marketing-footer>div{flex-wrap:wrap}
+/* Plans and billing */
+.billing{max-width:1180px}
+.billing-notice{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:12px 16px;font-size:13px;line-height:1.6;margin-bottom:18px;color:var(--text)}
+.billing-notice a{color:var(--accent);font-weight:550;white-space:nowrap}
+.billing-notice.warn{border-color:#f0b42966;background:#f0b4290d}
+.billing-notice.good{border-color:#61d4a066;background:#61d4a00d}
+.billing-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.billing-card{border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:22px}
+.billing-card .tiny-label{font-size:10px;color:var(--muted)}
+.billing-card h2{font-size:22px;font-weight:550;letter-spacing:-.035em;margin:10px 0 8px;display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.billing-card h2 small{font-size:13px;font-weight:450;color:var(--muted);letter-spacing:0}
+.billing-card p{font-size:13px;line-height:1.7;color:var(--muted)}
+.status-pill{font-size:11px;font-weight:550;letter-spacing:0;border-radius:20px;padding:3px 9px;border:1px solid var(--line);color:var(--muted)}
+.status-pill.good{color:#3fbf86;border-color:#61d4a055}
+.status-pill.warn{color:#d4920f;border-color:#f0b42966}
+.usage-bar{height:8px;border-radius:8px;background:var(--panel-2);overflow:hidden;margin:4px 0 12px}
+.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:8px;transition:width .3s}
+.usage-bar.near i{background:#f0b429}
+.usage-bar.over i{background:var(--danger)}
+.billing-heading{font-size:19px;font-weight:550;letter-spacing:-.03em;margin:34px 0 6px}
+.billing-sub{font-size:12px;margin-bottom:6px}
+.owner-card{margin-top:26px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.owner-card p{flex:1;min-width:220px}
+.plan-picker{margin-top:14px}
+.interval-toggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;padding:3px;background:var(--panel);margin-bottom:16px}
+.interval-toggle button{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:6px;font-size:13px;color:var(--muted)}
+.interval-toggle button.active{background:var(--panel-2);color:var(--text);font-weight:550}
+.save-pill{font-size:10px;color:#3fbf86;font-weight:550}
+.plan-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+.plan-card{position:relative;display:flex;flex-direction:column;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:20px 16px 16px;min-width:0}
+.plan-card.recommended{border-color:var(--accent)}
+.plan-card.current{border-color:#61d4a088}
+.plan-flag{position:absolute;top:-9px;left:12px;font-size:10px;font-weight:600;background:var(--accent);color:var(--accent-ink);border-radius:20px;padding:2px 8px}
+.plan-flag.current{background:#3fbf86;color:#fff}
+.plan-volume{font-family:var(--font-mono);font-size:24px;letter-spacing:-.04em}
+.plan-unit{font-size:11px;color:var(--muted)}
+.plan-price{font-size:28px;font-weight:550;letter-spacing:-.04em;margin:16px 0 2px}
+.plan-price small{font-size:13px;font-weight:450;color:var(--muted)}
+.plan-billed{font-size:11px;color:var(--muted);margin-bottom:14px;flex:1}
+.plan-card .button{width:100%}
+.plan-card .button[aria-disabled="true"]{opacity:.7;cursor:default}
+.plan-confirm{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+.plan-confirm small{font-size:10px;color:var(--muted);line-height:1.5}
+.text-button{font-size:12px;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+.plan-footnote{font-size:12px;color:var(--muted);margin-top:12px}
+.plan-included{margin-top:22px;border-top:1px solid var(--line);padding-top:18px}
+.plan-included .tiny-label{font-size:10px;color:var(--muted)}
+.plan-included ul{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px 18px;margin-top:12px;list-style:none;padding:0}
+.plan-included li{display:flex;gap:8px;align-items:center;font-size:13px}
+.plan-included svg{color:#3fbf86;flex-shrink:0}
+.pricing-page{max-width:1180px;margin:auto;padding:70px 40px 40px}
+.pricing-page>h1{font-size:52px;font-weight:500;letter-spacing:-.055em;line-height:1.08;margin-top:16px}
+.pricing-page>p{color:var(--muted);font-size:15px;line-height:1.7;margin:14px 0 34px;max-width:620px}
+.pricing-faq{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:50px}
+.pricing-faq h3{font-size:15px;font-weight:550;letter-spacing:-.02em}
+.pricing-faq p{font-size:13px;color:var(--muted);line-height:1.75;margin-top:8px}
+@media(max-width:1100px){.plan-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.plan-included ul{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.billing-summary,.pricing-faq{grid-template-columns:1fr}.plan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.plan-included ul{grid-template-columns:1fr}.pricing-page{padding:45px 16px 30px}.pricing-page>h1{font-size:36px}.billing-card h2{font-size:19px}}
+@media(max-width:340px){.plan-grid{grid-template-columns:1fr}}
+.sample-note{color:var(--text);font-weight:500}

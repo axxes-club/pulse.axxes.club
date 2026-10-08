@@ -132,6 +132,7 @@ export function ReportShell({
           )}
           <nav className="workspace-nav">
             <Link href={link("settings")}><Icon name="shield" size={16}/> App settings</Link>
+            {!demo && !embedded && <Link href="/dashboard/billing" className={view === "billing" ? "active" : ""}><Icon name="layers" size={16}/> Plan & billing</Link>}
             <Link href="/docs">
               <Icon name="help" size={16} />
               Documentation
@@ -168,7 +169,7 @@ export function ReportShell({
             <span>Workspace</span>
             <Icon name="chevron" size={12} />
             <strong>
-              {[...nav, ...advanced].find((n) => n[0] === view)?.[1] ||
+              {[...nav, ...advanced, ["billing", "Plan & billing"], ["settings", "App settings"]].find((n) => n[0] === view)?.[1] ||
                 "Overview"}
             </strong>
           </div>

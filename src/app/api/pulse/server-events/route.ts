@@ -3,6 +3,7 @@ import { validateBatch } from "@/lib/analytics/validation";
 import { verifyCredential } from "@/lib/analytics/sites";
 import { persistBatch } from "@/lib/analytics/storage";
 import { AnalyticsError } from "@/lib/analytics/access";
+import { allowance } from "@/lib/billing/store";
 export async function POST(request: Request) {
   try {
     const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
@@ -19,6 +20,8 @@ export async function POST(request: Request) {
         batch,
         { ip: "server", userAgent: "trusted-server" },
         true,
+        undefined,
+        await allowance(site.tenantId),
       ),
       { status: 202, headers: { "Cache-Control": "no-store" } },
     );
