@@ -16,5 +16,6 @@ INSERT INTO pulse_aggregate_state(id,watermark,last_completed_at) VALUES(1,now()
 DELETE FROM pulse_events WHERE (site_id,event_id) IN (SELECT site_id,event_id FROM pulse_events WHERE occurred_at<now()-interval '90 days' LIMIT 10000);
 DELETE FROM pulse_rate_limits WHERE key IN (SELECT key FROM pulse_rate_limits WHERE expires_at<now() LIMIT 10000);
 DELETE FROM pulse_daily_aggregates WHERE day<CURRENT_DATE-365;
+DELETE FROM pulse_usage WHERE month<CURRENT_DATE-interval '25 months';
 COMMIT;
 `;

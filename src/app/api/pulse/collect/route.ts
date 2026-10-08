@@ -3,6 +3,7 @@ import { validateBatch } from "@/lib/analytics/validation";
 import { findPublicSite } from "@/lib/analytics/sites";
 import { persistBatch } from "@/lib/analytics/storage";
 import { AnalyticsError } from "@/lib/analytics/access";
+import { allowance } from "@/lib/billing/store";
 export async function POST(request: Request) {
   let allowedOrigin: string | null = null;
   try {
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
         "unknown",
       country: /^[A-Z]{2}$/.test(request.headers.get("x-pulse-country") || "") ? new Intl.DisplayNames(["en"],{type:"region"}).of(request.headers.get("x-pulse-country")!) || "Unknown" : "Unknown",
       userAgent: request.headers.get("user-agent") || "",
-    });
+    }, false, undefined, await allowance(site.tenantId));
     return Response.json(result, {
       status: 202,
       headers: {

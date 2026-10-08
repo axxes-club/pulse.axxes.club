@@ -10,6 +10,7 @@ import { ReportView } from "./report-view";
 import { getReportConfig } from "@/lib/analytics/config";
 import { reportWindow } from "@/lib/analytics/timezone";
 import { Icon } from "./icon";
+import { BillingNotice } from "./billing-notice";
 export async function Dashboard({
   view = "overview",
   search,
@@ -21,6 +22,7 @@ export async function Dashboard({
   if (view === "integrations")
     return (
       <ReportShell view={view} organization={ctx.tenant.name} context={ctx}>
+        <BillingNotice tenantId={ctx.tenant.id} />
         <Suspense>
           <ReportView view={view} organizationKey={ctx.tenant.id} />
         </Suspense>
@@ -77,6 +79,7 @@ export async function Dashboard({
       }))}
       selectedSiteId={selected?.publicId}
     >
+      <BillingNotice tenantId={ctx.tenant.id} />
       {error ? (
         <div className="empty-report">
           <Icon name="help" size={35} />

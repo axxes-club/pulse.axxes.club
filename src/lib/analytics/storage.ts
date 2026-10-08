@@ -9,6 +9,7 @@ import { reportWindow } from "./timezone";
 import { AnalyticsError } from "./access";
 import { summarizeEvents } from "./metrics";
 import type { ReportQuery } from "./query";
+import { admit, isBillable, usageMonth, type Allowance } from "@/lib/billing/entitlement";
 export async function persistBatch(
   site: AnalyticsSite,
   batch: EventBatch,
@@ -23,11 +24,16 @@ export async function persistBatch(
       release: () => void;
     }>;
   },
+  /** The organization's monthly ceilings. Omitted only by tests that exercise storage alone. */
+  allowance?: Allowance,
 ) {
   if (batch.environment !== site.environment)
     throw new AnalyticsError("Wrong app environment");
   if (!trusted && site.collection !== "browser")
     throw new AnalyticsError("Use scoped server credentials for this app", 403);
+  // No active plan: refuse before touching storage, so idle sites with a leftover script cost nothing.
+  if (allowance?.billable === 0)
+    throw new AnalyticsError("Collection is paused: this organization has no active Pulse plan", 402);
   const secret = process.env.PULSE_HASH_SECRET;
   if (!secret || secret.length < 32)
     throw new AnalyticsError("Collection is not configured yet", 503);
@@ -41,7 +47,8 @@ export async function persistBatch(
     rotation,
   );
   const client = await (database || analyticsPool()).connect();
-  let accepted = 0;
+  let accepted = 0,
+    refused = false;
   try {
     await client.query("begin");
     const minute = Math.floor(now.getTime() / 60000);
@@ -54,7 +61,32 @@ export async function persistBatch(
     );
     if (rate.rows[0].count > 300)
       throw new AnalyticsError("Collection rate exceeded; retry later", 429);
-    for (const event of batch.events) {
+    const month = usageMonth(now);
+    let events = batch.events;
+    if (allowance) {
+      const usage = await client.query(
+        "select billable,stored from pulse_usage where tenant_id=$1 and month=$2",
+        [site.tenantId, month],
+      );
+      const current = { billable: Number(usage.rows[0]?.billable || 0), stored: Number(usage.rows[0]?.stored || 0) };
+      const decision = admit(current, allowance);
+      if (decision === "refuse") {
+        await client.query(
+          "insert into pulse_usage(tenant_id,month,refused) values($1,$2,$3) on conflict(tenant_id,month) do update set refused=pulse_usage.refused+excluded.refused,updated_at=now()",
+          [site.tenantId, month, events.length],
+        );
+        await client.query("commit");
+        refused = true;
+        throw new AnalyticsError(
+          "Collection is paused: this organization reached its monthly Pulse event limit",
+          402,
+        );
+      }
+      if (decision === "accept_billable_only") events = events.filter((e) => isBillable(e.name));
+    }
+    let billable = 0,
+      stored = 0;
+    for (const event of events) {
       if(event.anonymousVisitorId&&(!trusted||site.collection!=='server'))throw new AnalyticsError('Anonymous visitor hashes require scoped server credentials',403);
       if(event.anonymousVisitorId&&(site.identityMode!=='ephemeral'||event.visitorId||event.sessionId))throw new AnalyticsError('Anonymous visitor hashes require ephemeral identity without explicit visitor or session IDs');
       if (
@@ -111,7 +143,7 @@ export async function persistBatch(
           ? "Desktop"
           : "Unknown";
       const result = await client.query(
-        "insert into pulse_events(site_id,tenant_id,environment,event_id,name,occurred_at,visitor_key,session_key,path,source,country,device,properties) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb) on conflict(site_id,event_id) do update set properties=excluded.properties,occurred_at=excluded.occurred_at where pulse_events.name='web_vital' and excluded.name='web_vital' and excluded.occurred_at>=pulse_events.occurred_at returning event_id",
+        "insert into pulse_events(site_id,tenant_id,environment,event_id,name,occurred_at,visitor_key,session_key,path,source,country,device,properties) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb) on conflict(site_id,event_id) do update set properties=excluded.properties,occurred_at=excluded.occurred_at where pulse_events.name='web_vital' and excluded.name='web_vital' and excluded.occurred_at>=pulse_events.occurred_at returning event_id,(received_at=now()) as inserted",
         [
           site.id,
           site.tenantId,
@@ -129,11 +161,21 @@ export async function persistBatch(
         ],
       );
       accepted += result.rowCount || 0;
+      if (result.rows[0]?.inserted) {
+        stored++;
+        if (isBillable(event.name)) billable++;
+      }
     }
+    if (allowance && stored)
+      await client.query(
+        "insert into pulse_usage(tenant_id,month,billable,stored) values($1,$2,$3,$4) on conflict(tenant_id,month) do update set billable=pulse_usage.billable+excluded.billable,stored=pulse_usage.stored+excluded.stored,updated_at=now()",
+        [site.tenantId, month, billable, stored],
+      );
     await client.query("commit");
-    return { accepted, duplicates: batch.events.length - accepted };
+    const dropped = batch.events.length - events.length;
+    return { accepted, duplicates: events.length - accepted, ...(dropped ? { dropped } : {}) };
   } catch (e) {
-    await client.query("rollback");
+    if (!refused) await client.query("rollback");
     throw e;
   } finally {
     client.release();

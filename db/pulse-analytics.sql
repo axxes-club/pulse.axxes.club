@@ -40,4 +40,13 @@ CREATE TABLE IF NOT EXISTS pulse_daily_aggregates (
  PRIMARY KEY(site_id,environment,day)
 );
 CREATE TABLE IF NOT EXISTS pulse_aggregate_state (id integer PRIMARY KEY CHECK(id=1),watermark timestamptz NOT NULL,last_completed_at timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS pulse_usage (
+ tenant_id uuid NOT NULL,
+ month date NOT NULL,
+ billable bigint NOT NULL DEFAULT 0,
+ stored bigint NOT NULL DEFAULT 0,
+ refused bigint NOT NULL DEFAULT 0,
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,month)
+);
 COMMIT;
