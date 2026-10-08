@@ -36,7 +36,7 @@ export function retentionCohorts(
   if (mode !== "persistent") return [];
   const visits = new Map<string, Set<string>>();
   for (const e of events) {
-    if (e.name !== "pageview") continue;
+    if (e.name !== "pageview" || e.properties?.__pulse_identity !== "persistent") continue;
     const days = visits.get(e.visitor) || new Set<string>();
     days.add(dateInZone(Date.parse(e.time),timezone));
     visits.set(e.visitor, days);

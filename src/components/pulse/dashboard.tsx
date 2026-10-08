@@ -7,7 +7,7 @@ import { parseReportQuery } from "@/lib/analytics/query";
 import { summarizeEvents, filteredEvents } from "@/lib/analytics/metrics";
 import type { AnalyticsEvent, AnalyticsReport } from "@/lib/analytics/types";
 import { ReportShell } from "./report-shell";
-import { ReportView } from "./report-view";
+import { ReportView, ReportRetry } from "./report-view";
 import { getReportConfig } from "@/lib/analytics/config";
 import { reportWindow } from "@/lib/analytics/timezone";
 import { Icon } from "./icon";
@@ -38,7 +38,7 @@ export async function Dashboard({
       "Analytics setup is not available yet. Your organization data is safe; try again once Pulse storage has been configured.";
   }
   let selected = sites.find((s) => s.publicId === search.site) || sites[0];
-  if(selected && search.environment && selected.environment !== search.environment) selected = sites.find(s=>s.name === selected!.name && s.environment === search.environment) || selected;
+  if (selected && search.environment && selected.environment !== search.environment) error = "This app uses the " + selected.environment + " environment. Choose the app for the environment you want in the app selector.";
   if (search.site && !sites.some((s) => s.publicId === search.site))
     error = "That app is not available in this organization.";
   const params = new URLSearchParams();
@@ -63,13 +63,19 @@ export async function Dashboard({
     try {
       config = await getReportConfig(selected.publicId);
       if (view === "funnels") {
-        // Funnels need the ordered events themselves; sampled windows keep whole visitors.
-        const loaded = await loadEvents(selected, new Date(selectedWindow.previousStart), new Date(Date.now() + 60_000));
+        // Funnel sampling keeps complete sessions, including sessions crossing midnight.
+        const loaded = await loadEvents(selected, new Date(selectedWindow.previousStart), new Date(selectedWindow.end), undefined, undefined, "session");
         events = loaded.events;
-        report = summarizeEvents(events, query, new Date(), {
+        const visitorLoaded = loaded.sample && loaded.sample < 1
+          ? await loadEvents(selected, new Date(selectedWindow.previousStart), new Date(selectedWindow.end))
+          : loaded;
+        report = summarizeEvents(visitorLoaded.events, query, new Date(), {
           identityMode: selected.identityMode,
           goalNames: config.goals,
-          sample: loaded.sample,
+          sample: visitorLoaded.sample,
+          sessionEvents: loaded.events,
+          sessionSample: loaded.sample,
+          rawRetentionDays:90,
         });
       } else report = await buildReport(selected, query, config.goals);
     } catch (e) {
@@ -96,9 +102,7 @@ export async function Dashboard({
           <Icon name="help" size={35} />
           <h2>Let’s get Pulse connected.</h2>
           <p>{error}</p>
-          <Link href="/dashboard" className="button secondary">
-            Try again
-          </Link>
+          <ReportRetry/>
         </div>
       ) : !selected || !report ? (
         <div className="empty-report">
@@ -124,7 +128,9 @@ export async function Dashboard({
           <ReportView
             view={view}
             siteId={selected.publicId}
+            organizationKey={ctx.tenant.id}
             timezone={selected.timezone}
+            environment={selected.environment}
             funnels={config.funnels}
             goalNames={config.goals}
             canManage={["owner", "admin"].includes(ctx.role)}

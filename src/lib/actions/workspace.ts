@@ -2,6 +2,7 @@
 import { cookies,headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { requestAuth } from '@/lib/auth';
+import { safePulseReturn } from "@/lib/auth-return";
 import { ORG_COOKIE } from '@/lib/context';
 import { ensurePulseWorkspace } from '@/lib/workspace';
 export async function createPulseWorkspace(_previous:{error:string},form:FormData):Promise<{error:string}> {
@@ -17,5 +18,5 @@ export async function createPulseWorkspace(_previous:{error:string},form:FormDat
     return {error:'Your workspace could not be created. Please try again.'};
   }
   (await cookies()).set(ORG_COOKIE,workspace.id,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production'||requestHeaders.get('x-forwarded-proto')==='https',path:'/',maxAge:60*60*24*365});
-  redirect('/dashboard');
+  redirect(safePulseReturn(form.get('returnTo')));
 }

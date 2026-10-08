@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 import { bucketsFor, loadEvents, SAMPLE_BUCKETS } from "../../src/lib/analytics/storage";
-import { summarizeEvents } from "../../src/lib/analytics/metrics";
+import { summarizeEvents, evaluateFunnel } from "../../src/lib/analytics/metrics";
 
 const site = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -146,3 +146,27 @@ it("filters exact live activity before limiting recent traffic", async () => {
     expect(report.live.map(e=>e.id)).toEqual(["target"]);
   } finally { await db.close(); }
 }, 30000);
+it('keeps every step of a midnight session together even when daily visitor buckets differ',async()=>{
+ const db=new PGlite();await db.exec(readFileSync('db/pulse-analytics.sql','utf8'));
+ const low='000'+'0'.repeat(29),high='fff'+'f'.repeat(29);
+ try{
+ await db.exec('drop index pulse_events_session_sample_idx');
+ await db.exec(readFileSync('db/pulse-session-sampling.sql','utf8'));
+ await db.exec(readFileSync('db/pulse-session-sampling.sql','utf8'));
+ expect((await db.query("select count(*)::int as partitions from pg_inherits where inhparent='pulse_events_session_sample_idx'::regclass")).rows).toEqual([{partitions:16}]);
+ await db.query("insert into pulse_daily_aggregates values($1,$2,'production','2026-10-06',8,0,0,8)",[site.tenantId,site.id]);
+ for(const [session,label] of [[low,'included'],[high,'excluded']]){
+ await db.query("insert into pulse_events(site_id,tenant_id,environment,event_id,name,occurred_at,visitor_key,session_key,path) values($1,$2,'production',$3,'pageview','2026-10-06T23:59:00Z',$4,$5,'/'),($1,$2,'production',$6,'signup','2026-10-07T00:01:00Z',$7,$5,'/')",[site.id,site.tenantId,label+'_before',low,session,label+'_after',high]);
+ }
+ const pool={query:async(sql:string,args?:unknown[])=>({rows:(await db.query(sql,args)).rows})} as any;
+ const from=new Date('2026-10-06T00:00:00Z'),to=new Date('2026-10-08T00:00:00Z');
+ const visitorSample=await loadEvents(site,from,to,pool,4);
+ expect(visitorSample.events.map(e=>e.id).sort()).toEqual(['excluded_before','included_before']);
+ const sessionSample=await loadEvents(site,from,to,pool,4,'session');
+ expect(sessionSample.sample).toBe(0.5);
+ expect(sessionSample.events.map(e=>e.id).sort()).toEqual(['included_after','included_before']);
+ expect(evaluateFunnel(sessionSample.events,['pageview','signup'],1800000).map(s=>s.sessions)).toEqual([1,1]);
+ const summary=summarizeEvents(visitorSample.events,{range:7,source:'',metric:'conversions',environment:'production',compare:true},new Date('2026-10-08T12:00:00Z'),{sample:visitorSample.sample,sessionEvents:sessionSample.events,sessionSample:sessionSample.sample,goalNames:['signup']});
+ expect(summary).toMatchObject({sessions:2,conversions:2,conversionRate:100});
+ }finally{await db.close()}
+},30000);
