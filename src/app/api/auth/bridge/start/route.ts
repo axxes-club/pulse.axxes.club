@@ -9,8 +9,9 @@ export async function GET(request: Request) {
   const state = randomBytes(32).toString("base64url");
   const callback =
     "https://pulse.axxes.club/api/auth/bridge/issue?state=" + state;
+  const authPage = new URL(request.url).searchParams.get("mode") === "signup" ? "sign-up" : "sign-in";
   const response = NextResponse.redirect(
-    "https://handshake.axxes.club/sign-in?redirect=" +
+    `https://handshake.axxes.club/${authPage}?redirect=` +
       encodeURIComponent(callback),
   );
   response.cookies.set("__Host-pulse_bridge", state, {

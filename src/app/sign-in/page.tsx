@@ -10,6 +10,7 @@ export default async function SignInPage() {
     redirect("/dashboard");
   const host =
     (await headers()).get("x-forwarded-host") || (await headers()).get("host");
+  if (host === "pulse.axxes.club") redirect("https://pulse.axxes.app/api/auth/bridge/start");
   if (host === "pulse.axxes.app") redirect("/api/auth/bridge/start");
   if (HANDSHAKE_URL) {
     const h = await headers();
@@ -31,14 +32,14 @@ export default async function SignInPage() {
           No account?{" "}
           <a
             className="text-accent hover:underline"
-            href="https://members.axxes.club/sign-up"
+            href="/sign-up"
           >
-            Join AXXES
+            Create a Pulse account
           </a>
           {" · "}
           <a
             className="text-accent hover:underline"
-            href="https://members.axxes.club/forgot-password"
+            href="https://handshake.axxes.club/forgot-password"
           >
             Forgot password
           </a>
