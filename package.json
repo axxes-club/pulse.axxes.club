@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:security": "node --test tests/security*.check.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

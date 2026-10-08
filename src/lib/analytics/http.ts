@@ -1,3 +1,4 @@
+import {AdmissionError} from "@/lib/security/admission-core.mjs";
 import { AnalyticsError } from "./access";
 import { ZodError } from "zod";
 export async function readJson(request: Request) {
@@ -33,6 +34,7 @@ export async function readJson(request: Request) {
   }
 }
 export function errorResponse(error: unknown) {
+  if (error instanceof AdmissionError) return Response.json({error:error.message},{status:error.status});
   if (error instanceof AnalyticsError)
     return Response.json({ error: error.message }, { status: error.status });
   if (error instanceof ZodError)

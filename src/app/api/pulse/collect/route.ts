@@ -1,3 +1,4 @@
+import {clientIp} from "@/lib/security/admission";
 import { readJson, errorResponse } from "@/lib/analytics/http";
 import { validateBatch } from "@/lib/analytics/validation";
 import { findPublicSite } from "@/lib/analytics/sites";
@@ -23,8 +24,7 @@ export async function POST(request: Request) {
     }
     const result = await persistBatch(site, batch, {
       ip:
-        request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-        "unknown",
+        clientIp(request.headers),
       country: /^[A-Z]{2}$/.test(request.headers.get("x-pulse-country") || "") ? new Intl.DisplayNames(["en"],{type:"region"}).of(request.headers.get("x-pulse-country")!) || "Unknown" : "Unknown",
       userAgent: request.headers.get("user-agent") || "",
     }, false, undefined, await allowance(site.tenantId));
