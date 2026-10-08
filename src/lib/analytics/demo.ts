@@ -35,6 +35,7 @@ export function demoEvents(now = new Date()): AnalyticsEvent[] {
         time,
         visitor: `v-${(day * 43 + i) % 6500}`,
         session,
+        properties: { __pulse_identity: "persistent" },
         path: paths[i % 5],
         source: sources[(i + day) % 6],
         country: countries[(i * 3 + day) % 5],

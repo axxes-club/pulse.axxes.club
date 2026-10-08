@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseReportQuery, queryString } from "../../src/lib/analytics/query";
+import { parseReportQuery, parseSiteReportQuery, queryString } from "../../src/lib/analytics/query";
 describe("report query", () => {
   it("keeps filters and development environment across refresh", () => {
     const q = parseReportQuery(
@@ -25,5 +25,12 @@ describe("report query", () => {
     expect(q.environment).toBe("production");
     expect(q.metric).toBe("visitors");
   });
+});
+it('shares site timezone and environment defaults without replacing explicit filters',()=>{
+ const site={timezone:'America/Puerto_Rico',environment:'development'} as const;
+ const search=new URLSearchParams('path=/pricing');
+ expect(parseSiteReportQuery(search,site)).toMatchObject({timezone:site.timezone,environment:'development',path:'/pricing'});
+ expect(search.has('timezone')).toBe(false);
+ expect(parseSiteReportQuery(new URLSearchParams('timezone=Asia/Tokyo&environment=production'),site)).toMatchObject({timezone:'Asia/Tokyo',environment:'production'});
 });
 it('supports bounded custom complete-day ranges and rejects invalid dates',()=>{const q=parseReportQuery(new URLSearchParams('from=2026-09-10&to=2026-09-12&timezone=America/New_York'),new Date('2026-10-03T12:00:00Z'));expect(q.range).toBe(3);expect(q.from).toBe('2026-09-10');expect(q.to).toBe('2026-09-12');expect(parseReportQuery(new URLSearchParams('from=2026-02-30&to=2026-03-04'),new Date('2026-10-03T12:00:00Z')).from).toBe('')});

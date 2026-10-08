@@ -89,3 +89,32 @@ it('counts a browser interaction session without inventing one for server outcom
 it('shares attributed campaign and device filtering across funnel and overview inputs',async()=>{
  const {filteredEvents}=await import('../../src/lib/analytics/metrics');const base={time:'2026-10-01T12:00:00Z',visitor:'v',session:'s',path:'/',source:'Direct',country:'US',device:'Mobile',environment:'production'} as const;const events=[{...base,id:'1',name:'pageview',source:'Google',properties:{utm_campaign:'launch'}},{...base,id:'2',time:'2026-10-01T12:01:00Z',name:'signup'}];const q={range:7,source:'Google',campaign:'launch',device:'Mobile',environment:'production',metric:'visitors',compare:true} as const;expect(filteredEvents(events,q).map(e=>e.name)).toEqual(['pageview','signup']);expect(filteredEvents(events,{...q,device:'Desktop'})).toEqual([]);
 });
+it('suppresses comparisons outside retained raw history without masking available shorter comparisons',()=>{
+ const now=new Date('2026-10-08T12:00:00Z');
+ const query={range:90,source:'',metric:'visitors',environment:'production',compare:true,timezone:'UTC'} as const;
+ const unavailable=summarizeEvents([],query,now,{rawRetentionDays:90});
+ expect(unavailable.comparisonAvailable).toBe(false);
+ expect(unavailable.historyAvailable).toBe(false);
+ expect(unavailable.comparison).toEqual([]);
+ const available=summarizeEvents([],{...query,range:30},now,{rawRetentionDays:90});
+ expect(available.comparisonAvailable).toBe(true);
+ expect(available.historyAvailable).toBe(true);
+ expect(available.comparison).toHaveLength(30);
+ // Historical custom ranges can have no retained coverage even when they are short.
+ const historical=summarizeEvents([],{...query,range:7,from:'2026-01-01',to:'2026-01-07'},now,{rawRetentionDays:90});
+ expect(historical.comparisonAvailable).toBe(false);
+ expect(historical.historyAvailable).toBe(false);
+});
+it('uses whole-session samples for conversions across rotating visitor days and comparison buckets',()=>{
+ const now=new Date('2026-10-08T12:00:00Z');
+ const base={path:'/',source:'Direct',country:'US',device:'Desktop',environment:'production',properties:{pulse_collection:'browser'}} as const;
+ const first={...base,id:'before',name:'pageview',visitor:'daily-a',session:'midnight',time:'2026-10-06T23:59:00Z'};
+ const second={...base,id:'after',name:'pageview',visitor:'daily-b',session:'midnight',time:'2026-10-07T00:01:00Z'};
+ const goal={...second,id:'goal',name:'signup',time:'2026-10-07T00:02:00Z'};
+ const previous=[{...first,id:'previous-page',session:'previous',time:'2026-09-29T23:59:00Z'},{...goal,id:'previous-goal',session:'previous',time:'2026-09-30T00:02:00Z'}];
+ const report=summarizeEvents([first],{range:7,source:'',metric:'conversions',environment:'production',compare:true},now,{sample:0.25,sessionEvents:[first,second,goal,...previous],sessionSample:0.5,goalNames:['signup']});
+ expect(report).toMatchObject({visitors:4,pageviews:4,sessions:2,conversions:2,conversionRate:100,sample:0.25,sessionSample:0.5});
+ expect(report.series.reduce((n,p)=>n+p.value,0)).toBe(2);
+ expect(report.previous).toMatchObject({visitors:0,pageviews:0,sessions:2,conversions:2});
+ expect(report.comparison.reduce((n,p)=>n+p.value,0)).toBe(2);
+});

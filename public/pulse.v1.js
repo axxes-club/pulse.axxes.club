@@ -15,14 +15,34 @@
   var verification = script.getAttribute("data-verify"), verificationSent = false;
   var persistentId;
   function identity() { if(!persistent)return undefined; if(!persistentId){try{persistentId=localStorage.getItem('pulse-visitor-'+site);if(!persistentId){persistentId=uid();localStorage.setItem('pulse-visitor-'+site,persistentId);}}catch(_){persistentId=uid();}} return persistentId; }
-  var queue = [], timer, lastPage = '', session = uid(), lastActivity = Date.now(), destroyed = false;
+  var queue = [], timer, lastPage = '', session, lastActivity = 0, destroyed = false;
+  var sessionStorageKey = 'pulse-session-' + site + '-' + environment;
+  function clearSession() {
+    session = undefined; lastActivity = 0;
+    try { sessionStorage.removeItem(sessionStorageKey); } catch (_) {}
+  }
+  function activity() {
+    var now = Date.now();
+    if (!session) {
+      try {
+        var saved = JSON.parse(sessionStorage.getItem(sessionStorageKey) || 'null');
+        if (saved && /^[a-zA-Z0-9_-]{1,100}$/.test(saved.id) &&
+            typeof saved.lastActivity === 'number' && isFinite(saved.lastActivity) &&
+            saved.lastActivity <= now && now - saved.lastActivity <= 1800000) {
+          session = saved.id; lastActivity = saved.lastActivity;
+        }
+      } catch (_) {}
+    }
+    if (!session || now - lastActivity > 1800000 || now < lastActivity) session = uid();
+    lastActivity = now;
+    try { sessionStorage.setItem(sessionStorageKey, JSON.stringify({id:session,lastActivity:lastActivity})); } catch (_) {}
+  }
   var originalPush = window.history.pushState, originalReplace = window.history.replaceState;
   function uid() { return crypto.randomUUID ? crypto.randomUUID() : 'e_' + Date.now().toString(36) + Math.random().toString(36).slice(2); }
   function cleanUrl(value) { try { var u = new URL(value); var clean = new URL(u.origin + u.pathname); ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(function(k){var v=u.searchParams.get(k);if(v)clean.searchParams.set(k,v.slice(0,256));});return clean.toString(); } catch (_) { return ''; } }
   function track(name, properties, eventId, eventUrl) {
     if (destroyed || !permitted || navigator.globalPrivacyControl || !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(name)) return;
-    if (Date.now() - lastActivity > 1800000) session = uid();
-    lastActivity = Date.now();
+    activity();
     var safe = {}; Object.keys(properties || {}).slice(0,20).forEach(function(k){var v=properties[k];if(k.length<=64&&(typeof v==='boolean'||(typeof v==='number'&&isFinite(v))||typeof v==='string'))safe[k]=typeof v==='string'?v.slice(0,256):v;});
     queue.push({id:eventId||uid(),visitorId:identity(),name:name,timestamp:new Date().toISOString(),url:eventUrl||cleanUrl(location.href),referrer:cleanUrl(document.referrer),sessionId:session,properties:safe});
     if (queue.length > 100) queue.shift();
@@ -36,7 +56,7 @@
   function visibility() { if(document.visibilityState==='hidden')flush(); }
   window.history.pushState=navPush;window.history.replaceState=navReplace;
   window.addEventListener('popstate',page);window.addEventListener('pagehide',flush);document.addEventListener('visibilitychange',visibility);
-  window.pulse={track:track,page:page,flush:flush,consent:function(value){permitted=value===true;if(permitted)page();else{queue=[];lastPage='';}},destroy:function(){destroyed=true;clearTimeout(timer);queue=[];if(window.history.pushState===navPush)window.history.pushState=originalPush;if(window.history.replaceState===navReplace)window.history.replaceState=originalReplace;window.removeEventListener('popstate',page);window.removeEventListener('pagehide',flush);document.removeEventListener('visibilitychange',visibility);delete window.pulse;}};
+  window.pulse={track:track,page:page,flush:flush,consent:function(value){permitted=value===true;if(permitted)page();else{queue=[];lastPage='';clearSession();}},destroy:function(){destroyed=true;clearTimeout(timer);queue=[];if(window.history.pushState===navPush)window.history.pushState=originalPush;if(window.history.replaceState===navReplace)window.history.replaceState=originalReplace;window.removeEventListener('popstate',page);window.removeEventListener('pagehide',flush);document.removeEventListener('visibilitychange',visibility);delete window.pulse;}};
   if (typeof PerformanceObserver === 'function' && script.getAttribute('data-performance') === 'true') {
     var performanceUrl=cleanUrl(location.href);
     import(new URL('/vendor/web-vitals.v6.2.2.js',script.src).href).then(function(vitals){

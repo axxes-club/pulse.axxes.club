@@ -57,3 +57,14 @@ export function queryString(query: ReportQuery): string {
     compare: String(query.compare),
   }).toString();
 }
+/** Report and export routes use identical app defaults, while preserving explicit URL filters. */
+export function parseSiteReportQuery(
+  search: URLSearchParams,
+  site: { timezone: string; environment: "production" | "development" },
+  now = new Date(),
+): ReportQuery {
+  const parameters = new URLSearchParams(search);
+  if (!parameters.has("timezone")) parameters.set("timezone", site.timezone);
+  if (!parameters.has("environment")) parameters.set("environment", site.environment);
+  return parseReportQuery(parameters, now);
+}
