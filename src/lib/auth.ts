@@ -1,3 +1,5 @@
+import {guardPlatformAuth,platformAccessAllowed} from '@/lib/platform-access';
+import {APIError} from 'better-auth/api';
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { headers } from "next/headers";
@@ -21,7 +23,7 @@ export const HANDSHAKE_URL =
   process.env.HANDSHAKE_URL?.replace(/\/$/, "") || null;
 
 function makeAuth(url: string, domain: string | undefined) {
-  return betterAuth({
+  return guardPlatformAuth(betterAuth({
     baseURL: url,
     secret: process.env.BETTER_AUTH_SECRET,
     trustedOrigins: [
@@ -34,8 +36,9 @@ function makeAuth(url: string, domain: string | undefined) {
       ? { crossSubDomainCookies: { enabled: true, domain } }
       : undefined,
     database: drizzleAdapter(db, { provider: "pg", schema }),
+    databaseHooks: {session:{create:{before:async session=>{if(!await platformAccessAllowed(session.userId))throw new APIError('FORBIDDEN',{message:'Account access is suspended.'});return {data:session}}}}},
     emailAndPassword: { enabled: true },
-  });
+  }));
 }
 
 export const auth = makeAuth(baseURL, cookieDomain);
