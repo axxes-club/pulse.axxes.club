@@ -82,21 +82,20 @@ move to its own Cloud SQL instance (roughly $100+/month). At the 1M plan, the mo
 
 ## Reports at any volume
 
-Report memory and returned rows are bounded, while database scan cost still depends on traffic and filters. A window targets 90k events, accepts at most 112,500 rows, and retries at most six times (at most 675,006 returned rows across attempts). Exact live/recent queries return at most 130 rows after filtering. These limits do not cap database rows scanned or CPU.
+Report memory and returned rows are bounded, while database scan cost still depends on traffic and filters. Each visitor or session sampling query targets 90k events, accepts at most 112,500 rows, and retries at most six times (at most 675,006 returned rows across attempts). Exact reports use one raw-event load; sampled reports use at most two, for visitors and complete sessions (at most 1,350,012 returned rows across both retry sequences). Exact live/recent queries return at most 130 rows after filtering. These limits do not cap database rows scanned or CPU.
 
 - When a window holds more than that (estimated from `pulse_daily_aggregates`), Pulse reads a fixed
   share of visitors and scales the counts up.
-- Each visitor sits in one of 4096 buckets taken from their hashed key, so sampled visitors bring
-  their whole journey. Sessions, funnels, conversions and retention stay consistent.
+- Visitor and session samples use separate 4096-bucket hashes. Visitor-based counts and retention use visitor sampling; sessions, converted sessions and funnels use session sampling. This preserves cross-midnight sessions while anonymous visitor hashes continue rotating daily.
 - Rates and performance percentiles are not scaled. Live activity and recent events always come
   from a separate exact query.
-- The report says "Estimated from N% of visitors", and CSV exports carry the share.
-- `pulse_events_sample_idx` supports visitor-bucket selection; planner choices, time windows and exact activity filters can still scan more rows than returned. On 300k events, a
+- Reports disclose estimated visitor and session shares; CSV exports carry the share appropriate to each counting unit.
+- `pulse_events_sample_idx` and `pulse_events_session_sample_idx` support visitor/session-bucket selection; planner choices, time windows and exact activity filters can still scan more rows than returned. On 300k events, a
   1.5% sample read about 4.8k rows in 6 ms (PGlite).
 - Reports are cached for 20 s per instance, so the 10-second refresh on Overview and Live doesn't
   recompute the window. Live activity is re-read on every refresh.
 
-The sample index was estimated at about 70 B per stored event. The session-entry index adds further storage for pageviews; the ~700 B cost assumption has not been remeasured with both indexes. Validate storage and query CPU on production PostgreSQL before treating the margin table as measured.
+The sample index was estimated at about 70 B per stored event. The session-entry index adds storage for pageviews, and the session-sampling index adds storage for every event; the ~700 B cost assumption has not been remeasured with all three indexes. Validate storage and query CPU on production PostgreSQL before treating the margin table as measured.
 
 ## Launch checklist (approved by the owner in `pulse-oct8`, 2026-10-08)
 
@@ -130,4 +129,4 @@ The owner approved pushes, PRs, Stripe prices, registration, additive migrations
 
 Production promotion uses this already-tested immutable image with the normal readiness/rollback release script. The merge commit skips duplicate push workflows; PR Linux CI and the independent image checks above remain the verification evidence. Profit margins remain estimates, including unmeasured query CPU/index storage and a separate analytics-server cost before 5M+ customers. Do not promise fixed report scan cost or measured margins.
 
-Minor follow-up: repeating one `web_vital` ID within a single batch can overcount stored performance samples, prematurely dropping free performance data. Billable-event counts are unaffected.
+Resolved in the October 8 hardening pass: repeated `web_vital` IDs within one batch now count once toward stored usage, while retaining the latest sample. Regression tests verify the metering correction.

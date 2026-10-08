@@ -26,6 +26,10 @@ export type AnalyticsReport = {
   conversionRate: number;
   series: Array<{ time: string; value: number }>;
   comparison: Array<{ time: string; value: number }>;
+  /** False when the requested comparison includes expired raw history. */
+  comparisonAvailable?: boolean;
+  /** False when part of the current date range is outside retained raw history. */
+  historyAvailable?: boolean;
   sources: Breakdown[];
   campaigns: Breakdown[];
   pages: Breakdown[];
@@ -37,5 +41,7 @@ export type AnalyticsReport = {
   updatedAt: string;
   /** Share of visitors the report was computed from, when a large window was sampled; null when exact. */
   sample?: number | null;
+  /** Share of complete sessions used for sessions, conversion counts/rates, and funnels. */
+  sessionSample?: number | null;
   previous: { visitors: number; pageviews: number; conversions: number };
 };

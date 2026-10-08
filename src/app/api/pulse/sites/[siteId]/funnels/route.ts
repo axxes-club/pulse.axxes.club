@@ -3,7 +3,7 @@ import {
   readJson,
   requireSameOrigin,
 } from "@/lib/analytics/http";
-import { getReportConfig, createFunnel } from "@/lib/analytics/config";
+import { getReportConfig, createFunnel, deleteFunnel } from "@/lib/analytics/config";
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ siteId: string }> },
@@ -26,6 +26,17 @@ export async function POST(
       await createFunnel((await params).siteId, await readJson(request)),
       { status: 201 },
     );
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ siteId: string }> },
+) {
+  try {
+    requireSameOrigin(request);
+    return Response.json(await deleteFunnel((await params).siteId, await readJson(request)));
   } catch (e) {
     return errorResponse(e);
   }

@@ -3,6 +3,7 @@ import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { safePulseReturn, pulseSignInPath } from "@/lib/auth-return";
 import { requestAuth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 
@@ -119,8 +120,9 @@ export async function requireContext(): Promise<AppContext> {
   const session = await (
     await requestAuth()
   ).api.getSession({ headers: await headers() });
-  if (!session) redirect("/sign-in");
+  const returnTo = safePulseReturn((await headers()).get("x-pulse-return-to"));
+  if (!session) redirect(pulseSignInPath(returnTo));
   const ctx = await getContext();
-  if (!ctx) redirect("/no-tenant");
+  if (!ctx) redirect(returnTo === "/dashboard" ? "/no-tenant" : "/no-tenant?returnTo=" + encodeURIComponent(returnTo));
   return ctx;
 }

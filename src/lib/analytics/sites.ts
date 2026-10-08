@@ -152,10 +152,10 @@ export async function verifyCredential(secret: string, siteId: string) {
 
 export async function updateSite(publicId:string,input:unknown){
  const {site}=await requireAnalyticsAccess(publicId,"manage");
- const value=z.object({name:z.string().trim().min(1).max(100),timezone:z.string().max(100),enabled:z.boolean(),allowedOrigins:z.array(z.string().url().max(2048)).max(10)}).strict().parse(input);
+ const value=z.object({name:z.string().trim().min(1).max(100),timezone:z.string().max(100),enabled:z.boolean(),allowedOrigins:z.array(z.string().url().max(2048)).max(10),identityMode:z.enum(["ephemeral","persistent"]).optional()}).strict().parse(input);
  try{new Intl.DateTimeFormat("en",{timeZone:value.timezone}).format()}catch{throw new AnalyticsError("Choose a valid reporting timezone")}
  const origins=value.allowedOrigins.map(raw=>{const u=new URL(raw);if(u.username||u.password||!["https:","http:"].includes(u.protocol)||(site.environment==="production"&&u.protocol!=="https:"))throw new AnalyticsError("Production origins require HTTPS");return u.origin});
  if(site.collection==="browser"&&!origins.length)throw new AnalyticsError("Browser apps need an allowed origin");
- await metadataPool().query("update pulse_sites set name=$1,timezone=$2,enabled=$3,allowed_origins=$4::jsonb where id=$5 and tenant_id=$6",[value.name,value.timezone,value.enabled,JSON.stringify([...new Set(origins)]),site.id,site.tenantId]);return {ok:true};
+ await metadataPool().query("update pulse_sites set name=$1,timezone=$2,enabled=$3,allowed_origins=$4::jsonb,identity_mode=$5 where id=$6 and tenant_id=$7",[value.name,value.timezone,value.enabled,JSON.stringify([...new Set(origins)]),value.identityMode ?? site.identityMode,site.id,site.tenantId]);return {ok:true};
 }
 export async function revokeServerCredential(publicId:string,credentialId:string){const {site}=await requireAnalyticsAccess(publicId,"manage");if(!z.string().uuid().safeParse(credentialId).success)throw new AnalyticsError("Invalid credential");await metadataPool().query("update pulse_server_credentials set revoked_at=now() where id=$1 and site_id=$2",[credentialId,site.id]);return {ok:true}}

@@ -37,19 +37,35 @@ export function summarizeEvents(
     goalNames?: string[];
     /** Fraction of visitors present in `input` when it is a sample; counts are scaled up by its inverse. */
     sample?: number | null;
+    /** Complete sessions use a separate sample because daily visitor keys can rotate mid-session. */
+    sessionEvents?: AnalyticsEvent[];
+    sessionSample?: number | null;
+    /** Real reports cannot compare periods whose raw history has expired. Demo inputs omit this. */
+    rawRetentionDays?: number;
   } = {},
 ): AnalyticsReport {
   const factor = options.sample && options.sample < 1 ? 1 / options.sample : 1;
   const up = (n: number) => (factor === 1 ? n : Math.round(n * factor));
   const upAll = (list: Breakdown[]) => (factor === 1 ? list : list.map((b) => ({ ...b, value: up(b.value) })));
   const unique = filteredEvents(input,query);
+  const sessionUnique = options.sessionEvents ? filteredEvents(options.sessionEvents, query) : unique;
+  const sessionShare = options.sessionSample ?? options.sample;
+  const sessionFactor = sessionShare && sessionShare < 1 ? 1 / sessionShare : 1;
+  const upSession = (n: number) => sessionFactor === 1 ? n : Math.round(n * sessionFactor);
   const window = reportWindow(query.range, query.timezone || "UTC", now,query.from,query.to);
   const {start,end} = window;
-  const select = (from: number, to: number) =>
-    unique.filter((e) => {
+  const retainedFrom = options.rawRetentionDays === undefined
+    ? -Infinity
+    : now.getTime() - options.rawRetentionDays * 86400000;
+  const comparisonAvailable = window.previousStart >= retainedFrom;
+  const historyAvailable = start >= retainedFrom;
+  const selectFrom = (es: AnalyticsEvent[], from: number, to: number) =>
+    es.filter((e) => {
       const t = new Date(e.time).getTime();
       return t >= from && t < to;
     });
+  const select = (from: number, to: number) => selectFrom(unique, from, to);
+  const selectSessions = (from: number, to: number) => selectFrom(sessionUnique, from, to);
   const events = select(start, end),
     previous = select(window.previousStart, start);
   const metric = (es: AnalyticsEvent[]) => { const pageSessions = new Set(es.filter(e=>e.name === "pageview" || (e.properties?.pulse_collection === "browser" && e.name !== "web_vital")).map(e=>e.session)); return ({
@@ -68,14 +84,15 @@ export function summarizeEvents(
         .map((e) => e.session),
     ).size,
   }); };
-  const scaled = (m: ReturnType<typeof metric>) => ({
+  const scaled = (m: ReturnType<typeof metric>, sessions: ReturnType<typeof metric>) => ({
     visitors: up(m.visitors),
     pageviews: up(m.pageviews),
-    sessions: up(m.sessions),
-    conversions: up(m.conversions),
+    sessions: upSession(sessions.sessions),
+    conversions: upSession(sessions.conversions),
   });
-  const counts = scaled(metric(events)),
-    prev = scaled(metric(previous));
+  const currentSessions = metric(selectSessions(start, end));
+  const counts = scaled(metric(events), currentSessions),
+    prev = scaled(metric(previous), metric(selectSessions(window.previousStart, start)));
   const series = (offset: number) =>
     Array.from({ length: query.range }, (_, i) => {
       const buckets = offset ? window.previousBuckets : window.buckets;
@@ -86,7 +103,9 @@ export function summarizeEvents(
           day: "numeric",
           timeZone: window.timezone,
         }),
-        value: up(metric(select(from, buckets[i+1]))[query.metric]),
+        value: query.metric === "conversions"
+          ? upSession(metric(selectSessions(from, buckets[i+1])).conversions)
+          : up(metric(select(from, buckets[i+1]))[query.metric]),
       };
     });
   const pages = events.filter((e) => e.name === "pageview");
@@ -97,11 +116,13 @@ export function summarizeEvents(
       factor === 1 ? c : { ...c, size: up(c.size), retained: c.retained.map((r) => (r === null ? null : up(r))) },
     ),
     ...counts,
-    conversionRate: counts.sessions
-      ? (counts.conversions / counts.sessions) * 100
+    conversionRate: currentSessions.sessions
+      ? (currentSessions.conversions / currentSessions.sessions) * 100
       : 0,
     series: series(0),
-    comparison: series(query.range),
+    comparison: comparisonAvailable ? series(query.range) : [],
+    comparisonAvailable,
+    historyAvailable,
     sources: upAll(breakdown(pages, "source")),
     campaigns:upAll(breakdown(pages.map(e=>({...e,name:String(e.properties?.utm_campaign || "Unspecified")})),"name")),
     pages: upAll(breakdown(pages, "path")),
@@ -117,6 +138,7 @@ export function summarizeEvents(
       .slice(0, 30),
     updatedAt: now.toISOString(),
     sample: factor === 1 ? null : options.sample,
+    sessionSample: sessionFactor === 1 ? null : sessionShare,
     previous: prev,
   };
 }

@@ -1,3 +1,4 @@
+import { safePulseReturn } from "@/lib/auth-return";
 import { randomBytes, createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { authForHeaders } from "@/lib/auth";
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(
       "https://handshake.axxes.club/sign-in?redirect=" +
         encodeURIComponent(
-          "https://pulse.axxes.club/api/auth/bridge/issue?state=" + state,
+          "https://pulse.axxes.club/api/auth/bridge/issue?state=" + state + "&returnTo=" + encodeURIComponent(safePulseReturn(new URL(request.url).searchParams.get("returnTo"))),
         ),
     );
   const code = randomBytes(32).toString("base64url");

@@ -18,11 +18,16 @@ it("counts a cohort visitor returning the next day once", () => {
     { name: "pageview", visitor: "v1", time: "2026-10-02T12:00:00Z" },
     { name: "pageview", visitor: "v1", time: "2026-10-02T13:00:00Z" },
     { name: "pageview", visitor: "v2", time: "2026-10-01T12:00:00Z" },
-  ] as any;
+  ].map(e=>({...e,properties:{__pulse_identity:'persistent'}})) as any;
   expect(retentionCohorts(events, "persistent",new Date("2026-10-10T12:00:00Z"))).toEqual([
     { day: "2026-10-01", size: 2, retained: [2, 1, 0, 0, 0, 0, 0] },
   ]);
   expect(retentionCohorts(events, "ephemeral")).toEqual([]);
 });
-it('does not show a zero return rate for days that have not completed',()=>{const events=[{name:'pageview',visitor:'v1',time:'2026-10-02T12:00:00Z'}] as any;expect(retentionCohorts(events,'persistent',new Date('2026-10-03T12:00:00Z'))[0].retained).toEqual([1,null,null,null,null,null,null])});
-it('masks retention follow-up outside a historical selected window',()=>{const events=[{name:'pageview',visitor:'v1',time:'2026-10-01T12:00:00Z'}] as any;expect(retentionCohorts(events,'persistent',new Date('2026-10-10T12:00:00Z'),new Date('2026-10-02T00:00:00Z'))[0].retained).toEqual([1,null,null,null,null,null,null])});
+it('does not show a zero return rate for days that have not completed',()=>{const events=[{name:'pageview',visitor:'v1',time:'2026-10-02T12:00:00Z',properties:{__pulse_identity:'persistent'}}] as any;expect(retentionCohorts(events,'persistent',new Date('2026-10-03T12:00:00Z'))[0].retained).toEqual([1,null,null,null,null,null,null])});
+it('masks retention follow-up outside a historical selected window',()=>{const events=[{name:'pageview',visitor:'v1',time:'2026-10-01T12:00:00Z',properties:{__pulse_identity:'persistent'}}] as any;expect(retentionCohorts(events,'persistent',new Date('2026-10-10T12:00:00Z'),new Date('2026-10-02T00:00:00Z'))[0].retained).toEqual([1,null,null,null,null,null,null])});
+it('excludes historical anonymous and legacy unmarked traffic after persistent mode is enabled',()=>{
+ const base={name:'pageview',time:'2026-10-01T12:00:00Z'};
+ const events=[{...base,visitor:'legacy'},{...base,visitor:'anonymous',properties:{__pulse_identity:'ephemeral'}},{...base,visitor:'consented',properties:{__pulse_identity:'persistent'}}] as any;
+ expect(retentionCohorts(events,'persistent',new Date('2026-10-10T12:00:00Z'))).toEqual([{day:'2026-10-01',size:1,retained:[1,0,0,0,0,0,0]}]);
+});

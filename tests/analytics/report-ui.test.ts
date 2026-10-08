@@ -1,0 +1,24 @@
+import { afterEach,expect,it,vi } from 'vitest';
+import { createElement, useState } from 'react';
+import { act,create } from 'react-test-renderer';
+const nav=vi.hoisted(()=>({params:'site=app_test&source=search',push:vi.fn(),refresh:vi.fn()}));
+vi.mock('next/navigation',()=>({useRouter:()=>({push:nav.push,refresh:nav.refresh}),useSearchParams:()=>new URLSearchParams(nav.params),usePathname:()=>'/dashboard/pages'}));
+vi.mock('next/link',()=>({default:({children,...props}:any)=>createElement('a',props,children)}));
+vi.mock('../../src/components/pulse/integration-wizard',()=>({IntegrationWizard:()=>null}));
+vi.mock('../../src/components/pulse/site-settings',()=>({SiteSettings:()=>{const [secret,setSecret]=useState('');return createElement('input',{'aria-label':'fixture-secret',value:secret,onChange:(event:any)=>setSecret(event.target.value)});}}));
+vi.mock('../../src/components/pulse/chart',()=>({PulseChart:()=>null}));
+import { ReportView } from '../../src/components/pulse/report-view';
+import { summarizeEvents } from '../../src/lib/analytics/metrics';
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
+let root:any;
+afterEach(async()=>{if(root)await act(async()=>root.unmount());root=null;nav.params='site=app_test&source=search';vi.clearAllMocks();});
+const rows=Array.from({length:9},(_,i)=>({name:'/page-'+i,value:9-i}));
+function report(){return {...summarizeEvents([], {range:7,source:'',metric:'visitors',environment:'production',compare:true}),pages:rows,sources:rows,campaigns:rows,countries:rows,devices:rows};}
+async function render(view:string,extra:Record<string,unknown>={}){await act(async()=>{root=create(createElement(ReportView,{view,siteId:'app_test',data:report(),...extra}));});}
+it('shows every page on the dedicated pages report while retaining overview previews',async()=>{await render('pages');expect(root.root.findAllByProps({className:'breakdown-row'}).filter((n:any)=>n.props.children.some((c:any)=>c?.props?.className==='breakdown-name')).length).toBe(21);});
+it('selects saved funnels by URL and preserves existing report filters on selection',async()=>{const funnels=[{id:'new',name:'Newest',steps:['pageview','signup'],windowMs:1800000},{id:'old',name:'Earlier',steps:['pageview','purchase'],windowMs:600000}];nav.params='site=app_test&source=search&funnel=old';await render('funnels',{funnels});const select=root.root.findByProps({'aria-label':'Saved funnel'});expect(select.props.value).toBe('old');await act(async()=>select.props.onChange({target:{value:'new'}}));expect(nav.push.mock.calls.at(-1)![0]).toContain('funnel=new');expect(nav.push.mock.calls.at(-1)![0]).toContain('source=search');});
+it('removes inactive saved goals only after confirmation and without changing the report URL',async()=>{const confirm=vi.fn(()=>true);const fetch=vi.fn(async()=>({ok:true,json:async()=>({ok:true})}));vi.stubGlobal('window',{confirm});vi.stubGlobal('fetch',fetch);await render('events',{canManage:true,goalNames:['purchase']});const button=root.root.findAllByType('button').find((node:any)=>node.children.includes('Remove goal'));await act(async()=>button.props.onClick());expect(confirm).toHaveBeenCalledWith('Remove conversion goal “purchase”?');expect(fetch).toHaveBeenCalledWith('/api/pulse/sites/app_test/goals',expect.objectContaining({method:'DELETE',body:JSON.stringify({eventName:'purchase'})}));expect(nav.refresh).toHaveBeenCalled();vi.unstubAllGlobals();});
+it('makes a development site environment explicit rather than inheriting a production query',async()=>{nav.params='site=dev_site';await render('pages',{environment:'development'});expect(root.root.findByProps({title:'Choose an app and environment in the app selector.'}).children).toContain('Development');});
+
+it('clears settings mutation state when selecting another app',async()=>{await render('settings',{siteId:'app_a',organizationKey:'tenant'});await act(async()=>root.root.findByProps({'aria-label':'fixture-secret'}).props.onChange({target:{value:'old-app-secret'}}));expect(root.root.findByProps({'aria-label':'fixture-secret'}).props.value).toBe('old-app-secret');await act(async()=>root.update(createElement(ReportView,{view:'settings',siteId:'app_b',organizationKey:'tenant',data:report()})));expect(root.root.findByProps({'aria-label':'fixture-secret'}).props.value).toBe('');});
+it('scales funnels by complete-session sample rather than visitor sample',async()=>{const base={visitor:'visitor',session:'session',path:'/',source:'direct',country:'unknown',device:'desktop',environment:'production'};const events=[{...base,id:'page',name:'pageview',time:'2026-09-01T23:59:59Z'},{...base,id:'goal',name:'signup',time:'2026-09-02T00:00:01Z'}];await render('funnels',{data:{...report(),sample:0.25,sessionSample:0.5},events});const counts=root.root.findAllByProps({className:'funnel-bar'}).map((node:any)=>node.findByType('span').children.join(''));expect(counts).toEqual(['2 sessions','2 sessions']);});
