@@ -1,0 +1,34 @@
+import {afterEach,expect,it,vi} from 'vitest';
+import {createElement} from 'react';
+import {act,create} from 'react-test-renderer';
+vi.mock('next/link',()=>({default:({children,...props}:any)=>createElement('a',props,children)}));
+import {IntegrationWizard} from '../../src/components/pulse/integration-wizard';
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
+let root:any;afterEach(async()=>{if(root)await act(async()=>root.unmount());root=null;vi.unstubAllGlobals();});
+it('reopens existing external app setup and provides credential recovery without creating another app',async()=>{
+ const fetch=vi.fn(async(url:string)=>({ok:true,json:async()=>url==='/api/pulse/catalog'?{apps:[]}:url==='/api/pulse/sites'?{sites:[{publicId:'existing_server',name:'Backend',platform:'node',collection:'server',environment:'development',allowedOrigins:[],identityMode:'ephemeral'}]}:{credential:'recovered-secret'}}));
+ vi.stubGlobal('fetch',fetch);vi.stubGlobal('localStorage',{getItem:()=>null,setItem:vi.fn(),removeItem:vi.fn()});vi.stubGlobal('window',{scrollTo:vi.fn()});
+ await act(async()=>{root=create(createElement(IntegrationWizard,{organizationKey:'tenant'}));});
+ const setup=root.root.findByProps({'aria-label':'Set up Backend · development'});
+ await act(async()=>setup.props.onClick());
+ const credential=root.root.findByProps({'aria-label':'Create server credential'});
+ await act(async()=>credential.props.onClick());
+ expect(fetch).toHaveBeenCalledWith('/api/pulse/sites/existing_server/credentials',expect.objectContaining({method:'POST'}));
+ expect(fetch.mock.calls.filter(call=>call[0]==='/api/pulse/sites')).toHaveLength(1);
+ expect(root.root.findByProps({'aria-label':'Environment'}).props.value).toBe('development');
+});
+it('recovers backend setup after verification fails without creating a duplicate app',async()=>{
+ const storage={getItem:()=>null,setItem:vi.fn(),removeItem:vi.fn()};
+ const fetch=vi.fn(async(url:string,options?:{method?:string})=>({ok:!url.endsWith('/verify'),json:async()=>url==='/api/pulse/catalog'?{apps:[]}:url==='/api/pulse/sites'&&options?.method==='POST'?{publicId:'created_server'}:url==='/api/pulse/sites'?{sites:[]}:url.endsWith('/verify')?{error:'Verification unavailable'}:{credential:'recovered-secret'}}));
+ vi.stubGlobal('fetch',fetch);vi.stubGlobal('localStorage',storage);vi.stubGlobal('window',{scrollTo:vi.fn()});
+ await act(async()=>{root=create(createElement(IntegrationWizard,{organizationKey:'tenant'}));});
+ const node=root.root.findAllByType('button').find((button:any)=>button.findAllByType('strong').some((strong:any)=>strong.children.includes('Node.js')));
+ await act(async()=>node.props.onClick());
+ await act(async()=>root.root.findByProps({placeholder:'My awesome app'}).props.onChange({target:{value:'Backend'}}));
+ const createButton=root.root.findAllByType('button').find((button:any)=>button.children.includes('Create app & get setup '));
+ await act(async()=>createButton.props.onClick());
+ expect(storage.setItem).toHaveBeenCalledWith('pulse-setup:tenant',expect.stringContaining('created_server'));
+ await act(async()=>root.root.findByProps({'aria-label':'Create server credential'}).props.onClick());
+ expect(fetch).toHaveBeenCalledWith('/api/pulse/sites/created_server/credentials',expect.objectContaining({method:'POST'}));
+ expect(fetch.mock.calls.filter(call=>call[0]==='/api/pulse/sites'&&call[1]?.method==='POST')).toHaveLength(1);
+});

@@ -18,9 +18,12 @@ export function IntegrationWizard({
     ? "pulse-demo-setup"
     : `pulse-setup:${organizationKey || "workspace"}`;
   const [catalog,setCatalog] = useState<Array<{key:string;name:string;url:string;nativeAvailable:boolean;connections:Array<{publicId:string;environment:string;lastEventAt:string|null}>}>>([]);
+  const [existingApps,setExistingApps] = useState<Array<{publicId:string;name:string;platform:IntegrationPlatform;collection:string;environment:"production"|"development";allowedOrigins:string[];identityMode:"ephemeral"|"persistent"}>>([]);
+  const [appsError,setAppsError] = useState("");
+  useEffect(()=>{if(demo)return;fetch("/api/pulse/sites").then(async response=>{const data=await response.json();if(!response.ok)throw Error(data.error || "Apps unavailable");setExistingApps(data.sites)}).catch(error=>setAppsError(error.message));},[demo,organizationKey]);
   const [integrationKey,setIntegrationKey] = useState("");
   const [catalogError,setCatalogError] = useState("");
-  useEffect(()=>{if(demo)return;fetch("/api/pulse/catalog").then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.error || "Catalog unavailable");setCatalog(data.apps)}).catch(e=>setCatalogError(e.message));},[demo]);
+  useEffect(()=>{if(demo)return;fetch("/api/pulse/catalog").then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.error || "Catalog unavailable");setCatalog(data.apps)}).catch(e=>setCatalogError(e.message));},[demo,organizationKey]);
   const [verificationToken, setVerificationToken] = useState("");
   const [identityMode, setIdentityMode] = useState<"ephemeral" | "persistent">(
     "ephemeral",
@@ -54,7 +57,7 @@ export function IntegrationWizard({
         if (saved.identityMode === "persistent") setIdentityMode("persistent");
       }
     } catch {}
-  }, []);
+  }, [storageKey]);
   const nativeConnection = platform === "axxes" && environment === "production" && !!catalog.find(a=>a.key===integrationKey)?.nativeAvailable;
   const recipe = getInstallationRecipe(platform, {
     publicSiteId: siteId,
@@ -67,6 +70,7 @@ export function IntegrationWizard({
       'data-identity="persistent" data-consent="required" data-site=',
     );
   if(verificationToken && !["node","http"].includes(platform)) recipe.code=recipe.code.replace("data-site=",`data-verify="${verificationToken}" data-site=`);
+  function rememberSetup(serialized:string) { try { localStorage.setItem(storageKey,serialized); } catch {} }
   async function copy() {
     try {
       await navigator.clipboard.writeText(recipe.code);
@@ -105,16 +109,7 @@ export function IntegrationWizard({
         throw new Error(data.error || "Could not create your app");
       setSiteId(data.publicId);
       setStatus("waiting");
-      const verificationResponse = await fetch(
-        `/api/pulse/sites/${data.publicId}/verify`,
-        { method: "POST" },
-      );
-      const verification = await verificationResponse.json();
-      if (!verificationResponse.ok)
-        throw new Error(verification.error || "Could not start verification");
-      setVerificationToken(verification.token);
-      localStorage.setItem(
-        storageKey,
+      rememberSetup(
         JSON.stringify({
           name,
           origin,
@@ -125,6 +120,15 @@ export function IntegrationWizard({
           ...(platform === "axxes" ? {integrationKey} : {}),
         }),
       );
+
+      const verificationResponse = await fetch(
+        `/api/pulse/sites/${data.publicId}/verify`,
+        { method: "POST" },
+      );
+      const verification = await verificationResponse.json();
+      if (!verificationResponse.ok)
+        throw new Error(verification.error || "Could not start verification");
+      setVerificationToken(verification.token);
       if (["node", "http"].includes(platform)) {
         const keyResponse = await fetch(
           `/api/pulse/sites/${data.publicId}/credentials`,
@@ -140,6 +144,13 @@ export function IntegrationWizard({
     } finally {
       setPending(false);
     }
+  }
+  async function recoverCredential() {
+    if(demo || siteId === "YOUR_PUBLIC_APP_ID") return;
+    setPending(true);setError("");
+    try {const response=await fetch(`/api/pulse/sites/${siteId}/credentials`,{method:"POST"});const result=await response.json();if(!response.ok)throw Error(result.error || "Could not issue server credential");setServerKey(result.credential);}
+    catch(error){setError(error instanceof Error?error.message:"Could not issue server credential");}
+    finally{setPending(false);}
   }
   async function verify() {
     if (demo) {
@@ -265,6 +276,7 @@ export function IntegrationWizard({
         <label>
           Environment
           <select
+            aria-label="Environment"
             disabled={!demo && siteId !== "YOUR_PUBLIC_APP_ID"}
             value={environment}
             onChange={(e) =>
@@ -283,10 +295,12 @@ export function IntegrationWizard({
       >
         Create app & get setup <Icon name="arrow" size={15} />
       </button>
+      {!demo && siteId !== "YOUR_PUBLIC_APP_ID" && <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>{["node","http"].includes(platform) && <button className="button secondary small" aria-label="Create server credential" disabled={pending} onClick={recoverCredential}>{serverKey?"Create another server credential":"Create server credential"}</button>}<Link className="button secondary small" href={`/dashboard/settings?site=${siteId}&environment=${environment}`}>Manage app settings & credentials</Link></div>}
       {serverKey && (
         <div className="installation-code" style={{ marginTop: 20 }}>
           <div className="installation-code-header">
             Server environment · shown once
+            <button className="copy-button" onClick={async()=>{try{await navigator.clipboard.writeText(`PULSE_SERVER_KEY=${serverKey}`);setError("Server credential copied.");}catch{setError("Select and copy the server credential. Clipboard access is unavailable.");}}}>Copy credential</button>
           </div>
           <pre>
             <code>PULSE_SERVER_KEY={serverKey}</code>
@@ -424,7 +438,9 @@ export function IntegrationWizard({
         </p>
       )}
       <div className="connection-list">
-        {catalog.length>0 && <><h2>Your AXXES apps</h2>{catalog.filter(app=>["suite","handshake","pay","store","vibez","relay","lanes","folders","office","members","tollbooth"].includes(app.key)||app.connections.length).map(app=><div className="connection-row" key={app.key}><div><strong>{app.name}</strong><p className="muted">{app.connections.some(c=>c.lastEventAt)?"Traffic verified":app.connections.length?"Setup created · waiting for events":"Ready to connect"}</p></div><button className="button secondary small" onClick={()=>{setPlatform("axxes");setIntegrationKey(app.key);setName(app.name);setOrigin(app.url);const existing=app.connections.find(c=>c.environment===environment);setSiteId(existing?.publicId || "YOUR_PUBLIC_APP_ID");setVerificationToken("");setStatus(existing?.lastEventAt?"connected":"waiting");window.scrollTo({top:0,behavior:"smooth"})}}>Set up</button></div>)}</>}
+        {appsError && <p role="status">{appsError}</p>}
+        {existingApps.filter(app=>app.platform!=="axxes").length>0 && <><h2>Your apps</h2>{existingApps.filter(app=>app.platform!=="axxes").map(app=><div className="connection-row" key={app.publicId}><div><strong>{app.name}</strong><p className="muted">{app.environment} · {app.platform}</p></div><button className="button secondary small" aria-label={`Set up ${app.name} · ${app.environment}`} onClick={()=>{setPlatform(app.platform);setIntegrationKey("");setName(app.name);setOrigin(app.allowedOrigins[0] || "");setEnvironment(app.environment);setIdentityMode(app.identityMode);setSiteId(app.publicId);setVerificationToken("");setServerKey("");setStatus("waiting");setError("");rememberSetup(JSON.stringify({name:app.name,origin:app.allowedOrigins[0] || "",platform:app.platform,environment:app.environment,siteId:app.publicId,identityMode:app.identityMode}));window.scrollTo({top:0,behavior:"smooth"})}}>Set up</button></div>)}</>}
+        {catalog.length>0 && <><h2>Your AXXES apps</h2>{catalog.filter(app=>["suite","handshake","pay","store","vibez","relay","lanes","folders","office","members","tollbooth"].includes(app.key)||app.connections.length).map(app=><div className="connection-row" key={app.key}><div><strong>{app.name}</strong><p className="muted">{app.connections.some(c=>c.lastEventAt)?"Traffic verified":app.connections.length?"Setup created · waiting for events":"Ready to connect"}</p></div><button className="button secondary small" onClick={()=>{setServerKey("");setError("");setPlatform("axxes");setIntegrationKey(app.key);setName(app.name);setOrigin(app.url);const existing=app.connections.find(c=>c.environment===environment);setSiteId(existing?.publicId || "YOUR_PUBLIC_APP_ID");setVerificationToken("");setStatus(existing?.lastEventAt?"connected":"waiting");window.scrollTo({top:0,behavior:"smooth"})}}>Set up</button></div>)}</>}
 
         <h2>Built for your entire stack</h2>
         <div className="connection-row">

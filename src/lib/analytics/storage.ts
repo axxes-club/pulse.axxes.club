@@ -98,6 +98,8 @@ export async function persistBatch(
     }
     let billable = 0,
       stored = 0;
+    // received_at=now() stays true for every update to a row inserted in this transaction.
+    const countedInsertions = new Set<string>();
     for (const event of events) {
       if(event.anonymousVisitorId&&(!trusted||site.collection!=='server'))throw new AnalyticsError('Anonymous visitor hashes require scoped server credentials',403);
       if(event.anonymousVisitorId&&(site.identityMode!=='ephemeral'||event.visitorId||event.sessionId))throw new AnalyticsError('Anonymous visitor hashes require ephemeral identity without explicit visitor or session IDs');
@@ -141,7 +143,7 @@ export async function persistBatch(
           )
         : visitor;
       const session = event.sessionId
-        ? visitorKey(secret, site.id, event.sessionId, "session", rotation)
+        ? visitorKey(secret, site.id, event.sessionId, "session", "session")
         : visitorKey(
             secret,
             site.id,
@@ -169,11 +171,18 @@ export async function persistBatch(
           safeSource(event.referrer, sanitized.campaign),
           request.country || "Unknown",
           device,
-          JSON.stringify({ ...event.properties, ...sanitized.campaign, pulse_collection:trusted ? "server" : "browser" }),
+          JSON.stringify({
+            ...event.properties,
+            ...sanitized.campaign,
+            pulse_collection: trusted ? "server" : "browser",
+            // This provenance is server-owned; client claims cannot make anonymous history durable.
+            __pulse_identity: event.visitorId && site.identityMode === "persistent" ? "persistent" : "ephemeral",
+          }),
         ],
       );
       accepted += result.rowCount || 0;
-      if (result.rows[0]?.inserted) {
+      if (result.rows[0]?.inserted && !countedInsertions.has(event.id)) {
+        countedInsertions.add(event.id);
         stored++;
         if (isBillable(event.name)) billable++;
       }
@@ -194,13 +203,14 @@ export async function persistBatch(
   }
 }
 /**
- * Every visitor falls in one of 4096 fixed buckets derived from their hashed key, so a sample
- * keeps whole visitors and their sessions, funnels and retention intact. Keep this expression
- * identical to the pulse_events_sample_idx index in db/pulse-analytics.sql.
+ * Visitors and sessions have separate sampling buckets. Daily visitor rotation can split a
+ * midnight session, so session metrics and funnels must use the session expression instead.
+ * Keep these expressions identical to their indexes in db/pulse-analytics.sql.
  */
 const BUCKET = "(('x'||substr(visitor_key,1,3))::bit(12)::int)";
+const SESSION_BUCKET = "(('x'||substr(session_key,1,3))::bit(12)::int)";
 export const SAMPLE_BUCKETS = 4096;
-/** Rows a report reads at most. Bigger windows are sampled, so report cost stays flat with traffic. */
+/** Target rows per sampling query; larger windows return a bounded visitor/session sample. */
 export const RAW_LIMIT = 90_000;
 const columns =
   "event_id as id,name,occurred_at as time,visitor_key as visitor,session_key as session,path,source,country,device,environment,properties";
@@ -213,8 +223,9 @@ export const bucketsFor = (estimate: number, limit = RAW_LIMIT) =>
   estimate <= limit ? SAMPLE_BUCKETS : Math.max(1, Math.floor((SAMPLE_BUCKETS * limit) / estimate));
 
 /**
- * Raw events for a report window, sampled by visitor when the window is large. `sample` is the
- * share of visitors returned (1 when exact). Sizes come from the per-minute daily aggregates.
+ * Raw events for a report window, sampled by visitor or session when the window is large.
+ * `sample` is the share of the selected counting unit (1 when exact). Each read retains the
+ * same RAW_LIMIT target and bounded 25% sampling headroom, regardless of the counting unit.
  */
 export async function loadEvents(
   site: AnalyticsSite,
@@ -222,7 +233,9 @@ export async function loadEvents(
   to: Date = new Date(Date.now() + 60_000),
   pool: Pool = analyticsPool(),
   limit = RAW_LIMIT,
+  sampleBy: "visitor" | "session" = "visitor",
 ) {
+  const bucket = sampleBy === "session" ? SESSION_BUCKET : BUCKET;
   const estimate = await pool.query(
     "select coalesce(sum(events),0)::bigint as n from pulse_daily_aggregates where site_id=$1 and environment=$2 and day>=($3::timestamptz at time zone 'UTC')::date and day<=($4::timestamptz at time zone 'UTC')::date",
     [site.id, site.environment, from, to],
@@ -231,7 +244,7 @@ export async function loadEvents(
   for (let attempt = 0; attempt < 6; attempt++) {
     const sampled = buckets < SAMPLE_BUCKETS;
     const result = await pool.query(
-      `select ${columns} from pulse_events where tenant_id=$1 and site_id=$2 and environment=$3 and occurred_at>=$4::timestamptz and occurred_at<$5::timestamptz${sampled ? ` and ${BUCKET}<$7` : ""} order by occurred_at desc limit $6`,
+      `select ${columns} from pulse_events where tenant_id=$1 and site_id=$2 and environment=$3 and occurred_at>=$4::timestamptz and occurred_at<$5::timestamptz${sampled ? ` and ${bucket}<$7` : ""} order by occurred_at desc limit $6`,
       [site.tenantId, site.id, site.environment, from, to, Math.floor(limit * 1.25) + 1, ...(sampled ? [buckets] : [])],
     );
     if (result.rows.length <= Math.floor(limit * 1.25))
@@ -291,13 +304,17 @@ export async function buildReport(
   limit = RAW_LIMIT,
 ) {
   const window = reportWindow(query.range, query.timezone || site.timezone, now, query.from, query.to);
-  const key = JSON.stringify([site.id, site.environment, query, goalNames]);
+  const key = JSON.stringify([site.id, site.environment, site.identityMode, query, goalNames]);
   const cached = reports.get(key);
   let report: AnalyticsReport;
   if (cached && now.getTime() - cached.at < REPORT_TTL_MS) report = cached.report;
   else {
-    const { events, sample } = await loadEvents(site, new Date(window.previousStart), new Date(window.end), pool, limit);
-    report = summarizeEvents(events, query, now, { identityMode: site.identityMode, goalNames, sample });
+    const from = new Date(window.previousStart), to = new Date(window.end);
+    const { events, sample } = await loadEvents(site, from, to, pool, limit);
+    // At most two bounded raw-event samples: one for visitors, one for complete sessions.
+    // Exact windows reuse the first result, and cache hits need neither raw-event sample.
+    const sessions = sample < 1 ? await loadEvents(site, from, to, pool, limit, "session") : undefined;
+    report = summarizeEvents(events, query, now, { identityMode: site.identityMode, goalNames, sample, rawRetentionDays: 90, sessionEvents: sessions?.events, sessionSample: sessions?.sample });
     if (reports.size > 500) reports.clear();
     reports.set(key, { at: now.getTime(), report });
   }

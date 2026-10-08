@@ -1,3 +1,4 @@
+import { safePulseReturn, pulseSignInPath } from "@/lib/auth-return";
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { metadataPool } from "@/lib/analytics/postgres";
@@ -7,6 +8,11 @@ import {
   cookieSignature,
   consumeHandoffSql,
 } from "@/lib/analytics/session-bridge";
+function expired(request:NextRequest) {
+  const returnTo=safePulseReturn(request.cookies.get("__Host-pulse_return")?.value);
+  const href=pulseSignInPath(returnTo);
+  return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Continue to Pulse</title><main><h1>Your sign-in link expired</h1><p>Return to Pulse to continue signing in.</p><a href="${href}">Continue to Pulse</a></main></html>`,{status:400,headers:{"Content-Type":"text/html;charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"no-referrer","Content-Security-Policy":"default-src 'none'","X-Content-Type-Options":"nosniff"}});
+}
 export async function GET(request: NextRequest) {
   const host =
     request.headers.get("x-forwarded-host") || request.headers.get("host");
@@ -19,10 +25,7 @@ export async function GET(request: NextRequest) {
     !validBridgeState(state) ||
     !secret
   )
-    return new Response("Sign-in link expired. Start again from Pulse.", {
-      status: 400,
-      headers: { "Cache-Control": "no-store" },
-    });
+    return expired(request);
   const hash = (v: string) => createHash("sha256").update(v).digest("hex");
   const result = await metadataPool().query(
     consumeHandoffSql,
@@ -30,12 +33,10 @@ export async function GET(request: NextRequest) {
   );
   const session = result.rows[0];
   if (!session)
-    return new Response("Sign-in link expired. Start again from Pulse.", {
-      status: 400,
-      headers: { "Cache-Control": "no-store" },
-    });
+    return expired(request);
+  const returnTo=safePulseReturn(request.cookies.get("__Host-pulse_return")?.value);
   const tenant=request.cookies.get("__Host-pulse_tenant")?.value || "";
-  const response = NextResponse.redirect(validTenantPreference(tenant)?"https://pulse.axxes.app/api/organization/open?tenant="+tenant:"https://pulse.axxes.app/dashboard");
+  const response = NextResponse.redirect(validTenantPreference(tenant)?"https://pulse.axxes.app/api/organization/open?tenant="+tenant+"&returnTo="+encodeURIComponent(returnTo):"https://pulse.axxes.app"+returnTo);
   response.cookies.set(
     "__Secure-better-auth.session_token",
     cookieSignature(session.token, secret),
@@ -50,6 +51,7 @@ export async function GET(request: NextRequest) {
   );
   response.cookies.delete("__Host-pulse_bridge");
   response.cookies.delete("__Host-pulse_tenant");
+  response.cookies.delete("__Host-pulse_return");
   response.headers.set("Cache-Control", "no-store");
   response.headers.set("Referrer-Policy", "no-referrer");
   return response;

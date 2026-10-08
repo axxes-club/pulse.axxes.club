@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 function fixture(gpc = false, persistent = false, stale = false, endpoint = "", verification = "") {
   const batches: any[] = [];
+  let ids = 0;
   const destinations: string[]=[];
   const listeners: Record<string, Function[]> = {};
   const add = (name: string, fn: Function) => {
@@ -25,7 +26,13 @@ function fixture(gpc = false, persistent = false, stale = false, endpoint = "", 
     removeEventListener: () => {},
   };
   const stored = new Map<string, string>();
+  const sessions = new Map<string, string>();
   const context: any = {
+    sessionStorage: {
+      getItem: (k: string) => sessions.get(k) || null,
+      setItem: (k: string, v: string) => sessions.set(k, v),
+      removeItem: (k: string) => sessions.delete(k),
+    },
     localStorage: {
       getItem: (k: string) => stored.get(k) || null,
       setItem: (k: string, v: string) => stored.set(k, v),
@@ -46,6 +53,7 @@ function fixture(gpc = false, persistent = false, stale = false, endpoint = "", 
       },
       referrer: "https://google.com/search?q=private",
       visibilityState: "visible",
+      removeEventListener: () => {},
       addEventListener: add,
     },
     navigator: {
@@ -55,7 +63,7 @@ function fixture(gpc = false, persistent = false, stale = false, endpoint = "", 
         return true;
       },
     },
-    crypto: { randomUUID: () => `id_${Math.random()}` },
+    crypto: { randomUUID: () => `id_${++ids}` },
     URL,
     Blob,
     Date,
@@ -66,7 +74,7 @@ function fixture(gpc = false, persistent = false, stale = false, endpoint = "", 
     console,
   };
   runInNewContext(readFileSync("public/pulse.v1.js", "utf8"), context);
-  return { window, listeners, batches, context, stored, destinations };
+  return { window, listeners, batches, context, stored, sessions, destinations };
 }
 it("tracks initial page and real SPA navigation once, redacting private URL fields", async () => {
   const f = fixture();
@@ -112,3 +120,29 @@ it("sends to an explicitly configured same-origin proxy",()=>{const f=fixture(fa
 it('starts a fresh session after 30 minutes without activity',async()=>{const f=fixture();f.window.pulse.flush();const first=JSON.parse(await f.batches[0].text()).events[0].sessionId;let clock=Date.now()+1800001;class ClockDate extends Date{constructor(value?:string|number){super(value??clock)}static now(){return clock}}f.context.Date=ClockDate;f.window.pulse.track('feature_used');f.window.pulse.flush();const next=JSON.parse(await f.batches[1].text()).events[0].sessionId;expect(next).not.toBe(first)});
 
 it('automatically persists a scoped setup challenge once after consent',async()=>{const f=fixture(false,true,false,'','v_setup');f.window.pulse.flush();expect(f.batches).toHaveLength(0);f.window.pulse.consent(true);f.window.pulse.flush();const events=JSON.parse(await f.batches[0].text()).events;expect(events.filter((e:any)=>e.name==='pulse.verify')).toHaveLength(1);expect(events.find((e:any)=>e.name==='pulse.verify').properties.verification_token).toBe('v_setup');f.window.history.pushState();f.window.pulse.flush();expect(JSON.parse(await f.batches[1].text()).events.some((e:any)=>e.name==='pulse.verify')).toBe(false)});
+
+it('preserves the browser session across full document navigation and expires it after inactivity',async()=>{
+ const f=fixture();f.window.pulse.flush();
+ const first=JSON.parse(await f.batches[0].text()).events[0].sessionId;
+ expect(f.sessions.size).toBe(1);
+ f.window.pulse.destroy();f.context.location.href='https://example.com/signup';
+ runInNewContext(readFileSync('public/pulse.v1.js','utf8'),f.context);f.window.pulse.flush();
+ expect(JSON.parse(await f.batches[1].text()).events[0].sessionId).toBe(first);
+ f.window.pulse.destroy();let clock=Date.now()+1800001;
+ class ClockDate extends Date{constructor(value?:string|number){super(value??clock)}static now(){return clock}}
+ f.context.Date=ClockDate;runInNewContext(readFileSync('public/pulse.v1.js','utf8'),f.context);f.window.pulse.flush();
+ expect(JSON.parse(await f.batches[2].text()).events[0].sessionId).not.toBe(first);
+});
+it('does not persist sessions before consent or under GPC, and clears them on withdrawal',async()=>{
+ const blocked=fixture(true);expect(blocked.sessions.size).toBe(0);
+ const f=fixture(false,true);expect(f.sessions.size).toBe(0);
+ f.window.pulse.consent(true);f.window.pulse.flush();expect(f.sessions.size).toBe(1);
+ const first=JSON.parse(await f.batches[0].text()).events[0].sessionId;
+ f.window.pulse.consent(false);expect(f.sessions.size).toBe(0);
+ f.window.pulse.consent(true);f.window.pulse.flush();
+ expect(JSON.parse(await f.batches[1].text()).events[0].sessionId).not.toBe(first);
+});
+it('still collects safely when session storage is unavailable',()=>{
+ const f=fixture();f.context.sessionStorage.getItem=()=>{throw new Error('blocked')};f.context.sessionStorage.setItem=()=>{throw new Error('blocked')};
+ f.window.pulse.destroy();expect(()=>runInNewContext(readFileSync('public/pulse.v1.js','utf8'),f.context)).not.toThrow();f.window.pulse.flush();expect(f.batches.length).toBeGreaterThan(0);
+});

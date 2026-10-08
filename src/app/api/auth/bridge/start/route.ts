@@ -1,3 +1,4 @@
+import { safePulseReturn } from "@/lib/auth-return";
 import { validTenantPreference } from "@/lib/analytics/session-bridge";
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
@@ -7,12 +8,15 @@ export async function GET(request: Request) {
   if (host !== "pulse.axxes.app")
     return new Response("Invalid host", { status: 400 });
   const state = randomBytes(32).toString("base64url");
+  const returnTo=safePulseReturn(new URL(request.url).searchParams.get("returnTo"));
   const callback =
-    "https://pulse.axxes.club/api/auth/bridge/issue?state=" + state;
+    "https://pulse.axxes.club/api/auth/bridge/issue?state=" + state + "&returnTo=" + encodeURIComponent(returnTo);
+  const authPage = new URL(request.url).searchParams.get("mode") === "signup" ? "sign-up" : "sign-in";
   const response = NextResponse.redirect(
-    "https://handshake.axxes.club/sign-in?redirect=" +
+    `https://handshake.axxes.club/${authPage}?redirect=` +
       encodeURIComponent(callback),
   );
+  response.cookies.set("__Host-pulse_return",returnTo,{secure:true,httpOnly:true,sameSite:"lax",path:"/",maxAge:1800});
   response.cookies.set("__Host-pulse_bridge", state, {
     secure: true,
     httpOnly: true,
