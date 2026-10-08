@@ -1,3 +1,4 @@
+vi.mock('@/lib/security/admission',()=>({rateLimited:(handler:any)=>handler}));
 import { expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 const database=vi.hoisted(()=>({query:vi.fn(async()=>({rows:[{token:'fixture-session',expires_at:new Date(Date.now()+3600000)}]}))}));
