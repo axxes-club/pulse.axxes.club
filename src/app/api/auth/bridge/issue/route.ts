@@ -1,10 +1,11 @@
+import {rateLimited} from "@/lib/security/admission";
 import { safePulseReturn } from "@/lib/auth-return";
 import { randomBytes, createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { authForHeaders } from "@/lib/auth";
 import { metadataPool } from "@/lib/analytics/postgres";
 import { validBridgeState } from "@/lib/analytics/session-bridge";
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const host =
     request.headers.get("x-forwarded-host") || request.headers.get("host");
   const state = new URL(request.url).searchParams.get("state") || "";
@@ -33,3 +34,5 @@ export async function GET(request: Request) {
   response.headers.set("Referrer-Policy", "no-referrer");
   return response;
 }
+
+export const GET=rateLimited(handleGET,"bridge:issue");

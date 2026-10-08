@@ -1,3 +1,4 @@
+import {rateLimited} from "@/lib/security/admission";
 import { safePulseReturn, pulseSignInPath } from "@/lib/auth-return";
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
@@ -13,7 +14,7 @@ function expired(request:NextRequest) {
   const href=pulseSignInPath(returnTo);
   return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Continue to Pulse</title><main><h1>Your sign-in link expired</h1><p>Return to Pulse to continue signing in.</p><a href="${href}">Continue to Pulse</a></main></html>`,{status:400,headers:{"Content-Type":"text/html;charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"no-referrer","Content-Security-Policy":"default-src 'none'","X-Content-Type-Options":"nosniff"}});
 }
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const host =
     request.headers.get("x-forwarded-host") || request.headers.get("host");
   const code = request.nextUrl.searchParams.get("code") || "";
@@ -56,3 +57,5 @@ export async function GET(request: NextRequest) {
   response.headers.set("Referrer-Policy", "no-referrer");
   return response;
 }
+
+export const GET=rateLimited(handleGET,"bridge:consume");
