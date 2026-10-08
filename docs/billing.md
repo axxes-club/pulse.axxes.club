@@ -61,7 +61,7 @@ Collect / server events / native outbox ──allowance(tenant)──▶ persist
 ## Cost model (estimate, not measured)
 
 These are per-event infrastructure costs on the current stack (Cloud Run 1 vCPU / 512 MiB, Cloud SQL
-PD-SSD at about $0.17/GB-month plus about $0.08/GB backups). They assume ~600 B per stored event
+PD-SSD at about $0.17/GB-month plus about $0.08/GB backups). They assume ~700 B per stored event
 including indexes, kept for 90 days, and a worst case of one event per request at ~30 ms CPU.
 Stripe is 2.9% + $0.30 per charge.
 
@@ -80,12 +80,23 @@ A single 10M customer stores roughly 20–70 GB, so before the first 5M+ custome
 move to its own Cloud SQL instance (roughly $100+/month). About six average paid organizations
 cover that. Measure real row size and request CPU after launch, then replace these estimates.
 
-## Before selling the 1M+ plans
+## Reports at any volume
 
-Reports load raw events into memory and stop at 100k events per report. For one app, that means
-about 50k events a month for a 30-day comparison report, and about 16k for a 90-day report. The
-25k–250k plans work today for typical multi-app organizations. The 1M, 5M and 10M plans need
-reports rebuilt on SQL aggregation first. Don't market them until that ships.
+Report cost no longer grows with traffic. A report reads at most about 90k raw events.
+
+- When a window holds more than that (estimated from `pulse_daily_aggregates`), Pulse reads a fixed
+  share of visitors and scales the counts up.
+- Each visitor sits in one of 4096 buckets taken from their hashed key, so sampled visitors bring
+  their whole journey. Sessions, funnels, conversions and retention stay consistent.
+- Rates and performance percentiles are not scaled. Live activity and recent events always come
+  from a separate exact query.
+- The report says "Estimated from N% of visitors", and CSV exports carry the share.
+- `pulse_events_sample_idx` makes a sampled read touch only the sampled rows. On 300k events, a
+  1.5% sample read about 4.8k rows in 6 ms (PGlite).
+- Reports are cached for 20 s per instance, so the 10-second refresh on Overview and Live doesn't
+  recompute the window. Live activity is re-read on every refresh.
+
+The sample index adds about 70 B per stored event. The cost model's ~700 B per row includes it.
 
 ## Launch checklist (needs the owner's go-ahead: production money, secrets and deploys)
 
@@ -97,7 +108,7 @@ reports rebuilt on SQL aggregation first. Don't market them until that ships.
 3. Stripe: `STRIPE_SECRET_KEY=<test key> node scripts/pulse-stripe-prices.mjs --apply`, then the
    same with the live key.
 4. Shared DB: `node scripts/pulse-migrate.mjs billing`. Analytics DB:
-   `node scripts/pulse-migrate.mjs analytics` (adds `pulse_usage`).
+   `node scripts/pulse-migrate.mjs analytics` (adds `pulse_usage` and the sample index; building the index briefly blocks event writes, which is short at current volume).
 5. `pulse-env`: `AXXES_PAYMENTS_KEY`, `AXXES_PAYMENTS_EVENT_SECRET`, `AXXES_OWNER_USER_ID`.
 6. Deploy Pulse. Then turn on owner access for AXXES's own organizations from Plan & billing, and
    make a test-mode purchase, upgrade, cancel and event delivery before the first live charge.

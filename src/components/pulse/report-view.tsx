@@ -242,6 +242,11 @@ export function ReportView({
             {view === "overview"
               ? "The bigger picture, at a glance. Here’s how your app is doing."
               : "Explore what matters. Keep your filters as you go."}
+            {report.sample ? (
+              <span className="sample-note" title="Large periods are computed from a fixed share of visitors and scaled up. Live activity and recent events are exact.">
+                {" "}Estimated from {report.sample >= 0.1 ? Math.round(report.sample * 100) : (report.sample * 100).toFixed(1)}% of visitors.
+              </span>
+            ) : null}
           </p>
         </div>
         <div className="workspace-controls">
@@ -558,7 +563,7 @@ export function ReportView({
                 </div>
                 <div className="funnel-bar">
                   <i style={{ width: `${step.rate}%` }} />
-                  <span>{step.sessions.toLocaleString()} sessions</span>
+                  <span>{(report.sample ? Math.round(step.sessions / report.sample) : step.sessions).toLocaleString()} sessions</span>
                 </div>
               </div>
             ))}

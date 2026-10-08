@@ -35,5 +35,7 @@ export type AnalyticsReport = {
   recent: AnalyticsEvent[];
   live: AnalyticsEvent[];
   updatedAt: string;
+  /** Share of visitors the report was computed from, when a large window was sampled; null when exact. */
+  sample?: number | null;
   previous: { visitors: number; pageviews: number; conversions: number };
 };

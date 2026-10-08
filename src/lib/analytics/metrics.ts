@@ -35,8 +35,13 @@ export function summarizeEvents(
   options: {
     identityMode?: "ephemeral" | "persistent";
     goalNames?: string[];
+    /** Fraction of visitors present in `input` when it is a sample; counts are scaled up by its inverse. */
+    sample?: number | null;
   } = {},
 ): AnalyticsReport {
+  const factor = options.sample && options.sample < 1 ? 1 / options.sample : 1;
+  const up = (n: number) => (factor === 1 ? n : Math.round(n * factor));
+  const upAll = (list: Breakdown[]) => (factor === 1 ? list : list.map((b) => ({ ...b, value: up(b.value) })));
   const unique = filteredEvents(input,query);
   const window = reportWindow(query.range, query.timezone || "UTC", now,query.from,query.to);
   const {start,end} = window;
@@ -63,8 +68,14 @@ export function summarizeEvents(
         .map((e) => e.session),
     ).size,
   }); };
-  const counts = metric(events),
-    prev = metric(previous);
+  const scaled = (m: ReturnType<typeof metric>) => ({
+    visitors: up(m.visitors),
+    pageviews: up(m.pageviews),
+    sessions: up(m.sessions),
+    conversions: up(m.conversions),
+  });
+  const counts = scaled(metric(events)),
+    prev = scaled(metric(previous));
   const series = (offset: number) =>
     Array.from({ length: query.range }, (_, i) => {
       const buckets = offset ? window.previousBuckets : window.buckets;
@@ -75,34 +86,37 @@ export function summarizeEvents(
           day: "numeric",
           timeZone: window.timezone,
         }),
-        value: metric(select(from, buckets[i+1]))[query.metric],
+        value: up(metric(select(from, buckets[i+1]))[query.metric]),
       };
     });
   const pages = events.filter((e) => e.name === "pageview");
   return {
     identityMode: options.identityMode || "ephemeral",
     performance: performanceSummary(events),
-    cohorts: retentionCohorts(events, options.identityMode || "ephemeral",now,new Date(end),window.timezone),
+    cohorts: retentionCohorts(events, options.identityMode || "ephemeral",now,new Date(end),window.timezone).map((c) =>
+      factor === 1 ? c : { ...c, size: up(c.size), retained: c.retained.map((r) => (r === null ? null : up(r))) },
+    ),
     ...counts,
     conversionRate: counts.sessions
       ? (counts.conversions / counts.sessions) * 100
       : 0,
     series: series(0),
     comparison: series(query.range),
-    sources: breakdown(pages, "source"),
-    campaigns:breakdown(pages.map(e=>({...e,name:String(e.properties?.utm_campaign || "Unspecified")})),"name"),
-    pages: breakdown(pages, "path"),
-    countries: breakdown(pages, "country"),
-    devices: breakdown(pages, "device"),
-    events: breakdown(
+    sources: upAll(breakdown(pages, "source")),
+    campaigns:upAll(breakdown(pages.map(e=>({...e,name:String(e.properties?.utm_campaign || "Unspecified")})),"name")),
+    pages: upAll(breakdown(pages, "path")),
+    countries: upAll(breakdown(pages, "country")),
+    devices: upAll(breakdown(pages, "device")),
+    events: upAll(breakdown(
       events.filter((e) => e.name !== "pageview" && e.name !== "web_vital"),
       "name",
-    ),
+    )),
     live: select(now.getTime()-300000,now.getTime()).sort((a,b)=>Date.parse(b.time)-Date.parse(a.time)).slice(0,100),
     recent: events
       .sort((a, b) => Date.parse(b.time) - Date.parse(a.time))
       .slice(0, 30),
     updatedAt: now.toISOString(),
+    sample: factor === 1 ? null : options.sample,
     previous: prev,
   };
 }

@@ -32,6 +32,10 @@ const FAQ = [
     "Every plan keeps detailed events for 90 days, and reports and exports cover that whole window.",
   ],
   [
+    "Are reports exact at high volume?",
+    "Totals for very large periods are estimated from a fixed share of whole visitors and clearly labelled, which keeps every report fast. Live activity and recent events are always exact.",
+  ],
+  [
     "Can I change or cancel?",
     "Any time from Plan & billing. Switching plans is prorated on the same subscription. Payments are handled securely by AXXES Payments with Stripe.",
   ],

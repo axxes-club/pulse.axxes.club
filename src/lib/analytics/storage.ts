@@ -1,13 +1,13 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
-import type { AnalyticsEvent } from "./types";
+import type { AnalyticsEvent, AnalyticsReport } from "./types";
 import type { EventBatch } from "./validation";
 import { sanitizeUrl, safeSource, visitorKey } from "./validation";
 import type { AnalyticsSite } from "./sites";
 import { analyticsPool } from "./postgres";
 import { reportWindow } from "./timezone";
 import { AnalyticsError } from "./access";
-import { summarizeEvents } from "./metrics";
+import { summarizeEvents, filteredEvents } from "./metrics";
 import type { ReportQuery } from "./query";
 import { admit, isBillable, usageMonth, type Allowance } from "@/lib/billing/entitlement";
 export async function persistBatch(
@@ -181,25 +181,111 @@ export async function persistBatch(
     client.release();
   }
 }
-export async function getEvents(site: AnalyticsSite, range: number,from?:Date) {
-  const result = await analyticsPool().query(
-    "select event_id as id,name,occurred_at as time,visitor_key as visitor,session_key as session,path,source,country,device,environment,properties from pulse_events where tenant_id=$1 and site_id=$2 and environment=$3 and occurred_at>=$4::timestamptz order by occurred_at desc limit 100001",
-    [site.tenantId, site.id, site.environment, from || new Date(Date.now()-Math.min(range * 2 + 2, 182)*86400000)],
+/**
+ * Every visitor falls in one of 4096 fixed buckets derived from their hashed key, so a sample
+ * keeps whole visitors and their sessions, funnels and retention intact. Keep this expression
+ * identical to the pulse_events_sample_idx index in db/pulse-analytics.sql.
+ */
+const BUCKET = "(('x'||substr(visitor_key,1,3))::bit(12)::int)";
+export const SAMPLE_BUCKETS = 4096;
+/** Rows a report reads at most. Bigger windows are sampled, so report cost stays flat with traffic. */
+export const RAW_LIMIT = 90_000;
+const columns =
+  "event_id as id,name,occurred_at as time,visitor_key as visitor,session_key as session,path,source,country,device,environment,properties";
+type Pool = Pick<ReturnType<typeof analyticsPool>, "query">;
+const toEvents = (rows: any[]) =>
+  rows.map((e) => ({ ...e, time: new Date(e.time).toISOString() })) as AnalyticsEvent[];
+
+/** Buckets to read so a window of about `estimate` rows stays within the limit. */
+export const bucketsFor = (estimate: number, limit = RAW_LIMIT) =>
+  estimate <= limit ? SAMPLE_BUCKETS : Math.max(1, Math.floor((SAMPLE_BUCKETS * limit) / estimate));
+
+/**
+ * Raw events for a report window, sampled by visitor when the window is large. `sample` is the
+ * share of visitors returned (1 when exact). Sizes come from the per-minute daily aggregates.
+ */
+export async function loadEvents(
+  site: AnalyticsSite,
+  from: Date,
+  to: Date = new Date(Date.now() + 60_000),
+  pool: Pool = analyticsPool(),
+  limit = RAW_LIMIT,
+) {
+  const estimate = await pool.query(
+    "select coalesce(sum(events),0)::bigint as n from pulse_daily_aggregates where site_id=$1 and environment=$2 and day>=($3::timestamptz at time zone 'UTC')::date and day<=($4::timestamptz at time zone 'UTC')::date",
+    [site.id, site.environment, from, to],
   );
-  if (result.rows.length > 100000)
-    throw new AnalyticsError(
-      "This report exceeds the current raw-event query limit",
-      422,
+  let buckets = bucketsFor(Number(estimate.rows[0]?.n || 0), limit);
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const sampled = buckets < SAMPLE_BUCKETS;
+    const result = await pool.query(
+      `select ${columns} from pulse_events where tenant_id=$1 and site_id=$2 and environment=$3 and occurred_at>=$4::timestamptz and occurred_at<$5::timestamptz${sampled ? ` and ${BUCKET}<$7` : ""} order by occurred_at desc limit $6`,
+      [site.tenantId, site.id, site.environment, from, to, Math.floor(limit * 1.25) + 1, ...(sampled ? [buckets] : [])],
     );
-  return result.rows.map((e) => ({
-    ...e,
-    time: new Date(e.time).toISOString(),
-  })) as AnalyticsEvent[];
+    if (result.rows.length <= Math.floor(limit * 1.25))
+      return { events: toEvents(result.rows), sample: buckets / SAMPLE_BUCKETS };
+    // The aggregates lag a burst of traffic by up to a minute: read a smaller share and retry.
+    if (buckets === 1) break;
+    buckets = Math.max(1, Math.floor(buckets / 4));
+  }
+  throw new AnalyticsError("This report window is too large to load right now. Choose a shorter range.", 422);
 }
+
+/** The newest events, never sampled: live activity and the recent list stay exact on every plan. */
+export async function latestEvents(site: AnalyticsSite, before: Date, pool: Pool = analyticsPool()) {
+  const result = await pool.query(
+    `select ${columns} from pulse_events where tenant_id=$1 and site_id=$2 and environment=$3 and occurred_at>=$4::timestamptz and occurred_at<$5::timestamptz order by occurred_at desc limit 500`,
+    [site.tenantId, site.id, site.environment, new Date(before.getTime() - 86_400_000), before],
+  );
+  return toEvents(result.rows);
+}
+
+export async function getEvents(site: AnalyticsSite, range: number, from?: Date) {
+  return (await loadEvents(site, from || new Date(Date.now() - Math.min(range * 2 + 2, 182) * 86400000))).events;
+}
+
+// Overview and live views refresh every 10 seconds. A short cache keeps that from recomputing
+// the whole window each time, while live activity is re-read fresh on every request.
+const REPORT_TTL_MS = 20_000;
+const reports = new Map<string, { at: number; report: AnalyticsReport }>();
+
+/** A report for a window: sampled when large, cached briefly, with exact live and recent activity. */
+export async function buildReport(
+  site: AnalyticsSite,
+  query: ReportQuery,
+  goalNames: string[],
+  now = new Date(),
+  pool: Pool = analyticsPool(),
+  limit = RAW_LIMIT,
+) {
+  const window = reportWindow(query.range, query.timezone || site.timezone, now, query.from, query.to);
+  const key = JSON.stringify([site.id, site.environment, query, goalNames]);
+  const cached = reports.get(key);
+  let report: AnalyticsReport;
+  let fresh = false;
+  if (cached && now.getTime() - cached.at < REPORT_TTL_MS) report = cached.report;
+  else {
+    fresh = true;
+    const { events, sample } = await loadEvents(site, new Date(window.previousStart), new Date(now.getTime() + 60_000), pool, limit);
+    report = summarizeEvents(events, query, now, { identityMode: site.identityMode, goalNames, sample });
+    if (reports.size > 500) reports.clear();
+    reports.set(key, { at: now.getTime(), report });
+  }
+  if (fresh && !report.sample) return report;
+  // Live and recent activity come from an exact query, filtered the same way as the report.
+  const latest = filteredEvents(await latestEvents(site, new Date(now.getTime() + 60_000), pool), query);
+  return {
+    ...report,
+    live: latest.filter((e) => Date.parse(e.time) >= now.getTime() - 300_000).slice(0, 100),
+    recent: latest.filter((e) => Date.parse(e.time) >= window.start && Date.parse(e.time) < window.end).slice(0, 30),
+    updatedAt: now.toISOString(),
+  };
+}
+
 export async function getReport(site: AnalyticsSite, query: ReportQuery) {
-  const {getReportConfig} = await import("./config");
-  const [events,config] = await Promise.all([getEvents(site, query.range,new Date(reportWindow(query.range,query.timezone || site.timezone,new Date(),query.from,query.to).previousStart)),getReportConfig(site.publicId)]);
-  return summarizeEvents(events, query,new Date(),{identityMode:site.identityMode,goalNames:config.goals});
+  const { getReportConfig } = await import("./config");
+  const config = await getReportConfig(site.publicId);
+  return buildReport(site, query, config.goals);
 }
 export async function connectionStatus(site: AnalyticsSite) {
   const result = await analyticsPool().query(
