@@ -78,8 +78,7 @@ Stripe is 2.9% + $0.30 per charge.
 Annual plans pay one Stripe fee a year, which improves these numbers. Fixed costs are not in the
 table. The analytics database shares `axxes-prod-db` (2 vCPU, 20 GB disk) with every other product.
 A single 10M customer stores roughly 20–70 GB, so before the first 5M+ customer, analytics should
-move to its own Cloud SQL instance (roughly $100+/month). About six average paid organizations
-cover that. Measure real row size and request CPU after launch, then replace these estimates.
+move to its own Cloud SQL instance (roughly $100+/month). At the 1M plan, the model leaves about $16.45/month after variable infrastructure and Stripe fees; seven such organizations cover a $100/month fixed database bill before support and other overhead. Measure real row size and request CPU after launch, then replace these estimates.
 
 ## Reports at any volume
 
@@ -99,7 +98,7 @@ Report memory and returned rows are bounded, while database scan cost still depe
 
 The sample index was estimated at about 70 B per stored event. The session-entry index adds further storage for pageviews; the ~700 B cost assumption has not been remeasured with both indexes. Validate storage and query CPU on production PostgreSQL before treating the margin table as measured.
 
-## Launch checklist (needs the owner's go-ahead: production money, secrets and deploys)
+## Launch checklist (approved by the owner in `pulse-oct8`, 2026-10-08)
 
 1. Payments: merge and deploy the in-place plan change and checkout expiration endpoints (payments.axxes.app branch
    `feat/subscription-change`).
@@ -110,9 +109,25 @@ The sample index was estimated at about 70 B per stored event. The session-entry
    same with the live key.
 4. Shared DB: `node scripts/pulse-migrate.mjs billing`. Analytics DB:
    `node scripts/pulse-migrate.mjs analytics` (adds `pulse_usage` and the sample index; building the index briefly blocks event writes, which is short at current volume).
-5. `pulse-env`: `AXXES_PAYMENTS_KEY`, `AXXES_PAYMENTS_EVENT_SECRET`, `AXXES_OWNER_USER_ID`.
+5. `pulse-analytics-env` (the secret actually mounted by production Pulse): `AXXES_PAYMENTS_KEY`, `AXXES_PAYMENTS_EVENT_SECRET`, `AXXES_OWNER_USER_ID`.
 6. Deploy Pulse. Then turn on owner access for AXXES's own organizations from Plan & billing, and
    make a test-mode purchase, upgrade, cancel and event delivery before the first live charge.
 
 Apply the migrations before the deploy. Otherwise collection falls back to trial-sized limits and
 the billing page shows "unavailable".
+
+
+## 2026-10-08 launch verification
+
+The owner approved pushes, PRs, Stripe prices, registration, additive migrations, secrets, deployment and sandbox checks in `pulse-oct8`. Pulse PR #5 and Payments PRs #3/#4 contain the implementation and pre-launch corrections. Production uses `pulse-analytics-env`, not the older `pulse-env`.
+
+- Pulse Linux CI passed all 86 tests, including real PostgreSQL checks for ten concurrent visitors at the monthly ceiling and two concurrent checkout callbacks in a two-connection pool. Payments Linux CI passed its 19 tests, lint, types and build.
+- Pulse image build `8620aa85-6831-4946-9cde-f0f47b6c08dd` passed Chromium/WebKit browser tests, container tests, production build and image-layer secret scan. Its image digest is `sha256:7df01f00523e30a5509a9ecf1cf01ab520c3ab6da1bb673f0a857148e4ea3e33`.
+- All 12 prices exist in both Stripe modes. Pulse is registered in Payments, billing/usage/index migrations are applied, and production billing secrets reference the verified owner binding. The AXXES organization has an explicit audited owner grant; other organizations retain their own trial/plan policy and the owner-grant button.
+- A hosted sandbox checkout was paid with Stripe's test card in the browser. The same subscription upgraded from 25k to 100k in place. Automatic Stripe → Payments → sandbox Pulse events applied the upgraded entitlement; tampered signed delivery was rejected.
+- Billing portal opened and showed subscription, invoice and proration. Scheduling and final cancellation were verified through the Stripe test API and automatic signed events; scheduling was visible in the portal. The automated portal cancellation click path was not reliably completed.
+- Test and live unpaid checkouts were created and expired through Payments, with cross-product access denied. No live charge was performed. Tests used an isolated billing schema; that schema, tag and temporary secrets must be removed after verification.
+
+Production promotion uses this already-tested immutable image with the normal readiness/rollback release script. The merge commit skips duplicate push workflows; PR Linux CI and the independent image checks above remain the verification evidence. Profit margins remain estimates, including unmeasured query CPU/index storage and a separate analytics-server cost before 5M+ customers. Do not promise fixed report scan cost or measured margins.
+
+Minor follow-up: repeating one `web_vital` ID within a single batch can overcount stored performance samples, prematurely dropping free performance data. Billable-event counts are unaffected.
