@@ -184,3 +184,9 @@ html[data-theme="light"]{--line-2:rgb(11 14 20 / 0.14);--shadow-card:0 1px 2px r
 .bottom-cta{border-radius:28px;border:1px solid var(--line);max-width:1180px;margin:80px auto;background:radial-gradient(600px circle at 50% 100%,color-mix(in oklab,var(--accent-deep) 22%,transparent),transparent 60%),var(--panel)}
 @media (max-width:700px){.marketing-nav{margin:8px;padding:8px 8px 8px 14px}}
 @media (prefers-reduced-motion:reduce){.feature-card,.button.primary{transition:none}.feature-card:hover,.button.primary:hover{transform:none}}
+/* App settings: the wizard row layout squeezes six fields; use a labelled two-column grid instead. */
+.integration-form.settings-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 20px;max-width:880px;align-items:start}
+.settings-form>p,.settings-form>label:has(textarea){grid-column:1/-1}
+.settings-form>p{margin:0;font-size:12px;line-height:1.5}
+.settings-form textarea{display:block;margin-top:8px;border-radius:6px;font-size:13px;resize:vertical}
+@media(max-width:760px){.integration-form.settings-form{grid-template-columns:1fr}}
