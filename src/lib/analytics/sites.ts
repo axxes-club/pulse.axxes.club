@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getContext } from "@/lib/context";
 import { metadataPool } from "./postgres";
 import { AnalyticsError, authorizeSite } from "./access";
+import { OriginError, logOriginRejection, parseAppOrigin } from "./origin";
 export type AnalyticsSite = {
   id: string;
   tenantId: string;
@@ -88,20 +89,12 @@ export async function createSite(input: unknown) {
     : "browser";
   let origins: string[] = [];
   if (collection === "browser") {
-    let url: URL;
     try {
-      url = new URL(value.origin || "");
-    } catch {
-      throw new AnalyticsError("Enter a valid app URL");
+      origins = [parseAppOrigin(value.origin, value.environment)];
+    } catch (e) {
+      if (e instanceof OriginError) logOriginRejection(e, { action: "create", environment: value.environment, platform: value.platform, tenant: ctx.tenant.id });
+      throw e;
     }
-    if (
-      url.username ||
-      url.password ||
-      !["http:", "https:"].includes(url.protocol) ||
-      (url.protocol === "http:" && value.environment === "production")
-    )
-      throw new AnalyticsError("Production apps require an HTTPS origin");
-    origins = [url.origin];
   }
   if (value.platform === "axxes") {
     const app = await metadataPool().query("select url from axxes_product where key=$1 and status in ('live','beta')",[value.integrationKey]);
@@ -155,9 +148,9 @@ export async function verifyCredential(secret: string, siteId: string) {
 
 export async function updateSite(publicId:string,input:unknown){
  const {site}=await requireAnalyticsAccess(publicId,"manage");
- const value=z.object({name:z.string().trim().min(1).max(100),timezone:z.string().max(100),enabled:z.boolean(),allowedOrigins:z.array(z.string().url().max(2048)).max(10),identityMode:z.enum(["ephemeral","persistent"]).optional()}).strict().parse(input);
+ const value=z.object({name:z.string().trim().min(1).max(100),timezone:z.string().max(100),enabled:z.boolean(),allowedOrigins:z.array(z.string().max(2048)).max(10),identityMode:z.enum(["ephemeral","persistent"]).optional()}).strict().parse(input);
  try{new Intl.DateTimeFormat("en",{timeZone:value.timezone}).format()}catch{throw new AnalyticsError("Choose a valid reporting timezone")}
- const origins=value.allowedOrigins.map(raw=>{const u=new URL(raw);if(u.username||u.password||!["https:","http:"].includes(u.protocol)||(site.environment==="production"&&u.protocol!=="https:"))throw new AnalyticsError("Production origins require HTTPS");return u.origin});
+ const origins=value.allowedOrigins.filter(raw=>raw.trim()).map(raw=>{try{return parseAppOrigin(raw,site.environment)}catch(e){if(e instanceof OriginError)logOriginRejection(e,{action:"update",environment:site.environment,site:site.publicId,tenant:site.tenantId});throw e}});
  if(site.collection==="browser"&&!origins.length)throw new AnalyticsError("Browser apps need an allowed origin");
  await metadataPool().query("update pulse_sites set name=$1,timezone=$2,enabled=$3,allowed_origins=$4::jsonb,identity_mode=$5 where id=$6 and tenant_id=$7",[value.name,value.timezone,value.enabled,JSON.stringify([...new Set(origins)]),value.identityMode ?? site.identityMode,site.id,site.tenantId]);return {ok:true};
 }

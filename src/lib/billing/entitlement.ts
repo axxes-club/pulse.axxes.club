@@ -117,7 +117,10 @@ export function admit(usage: Usage, allowance: Allowance): Admission {
 }
 
 /** Events that count toward the plan. Performance samples and install checks are free. */
-export const isBillable = (name: string) => name !== "web_vital" && name !== "pulse.verify";
+// Passive measurements (performance, scroll reach, engaged time) are stored within the storage
+// allowance but not charged as events, so turning them on never multiplies a customer's bill.
+const MEASUREMENTS = new Set(["web_vital", "pulse.verify", "scroll_depth", "engagement"]);
+export const isBillable = (name: string) => !MEASUREMENTS.has(name);
 
 export const usageMonth = (now = new Date()) =>
   `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;

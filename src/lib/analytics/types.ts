@@ -36,6 +36,15 @@ export type AnalyticsReport = {
   countries: Breakdown[];
   devices: Breakdown[];
   events: Breakdown[];
+  /** Automatic interactions (tracker data-auto). Scroll values are the percent of pageviews reaching each depth. */
+  interactions: {
+    contact: Breakdown[];
+    outbound: Breakdown[];
+    downloads: Breakdown[];
+    forms: Breakdown[];
+    scroll: Breakdown[];
+    engagement: { averageSeconds: number | null; pages: number };
+  };
   recent: AnalyticsEvent[];
   live: AnalyticsEvent[];
   updatedAt: string;

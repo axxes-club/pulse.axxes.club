@@ -40,7 +40,10 @@ export function errorResponse(error: unknown) {
   if (error instanceof ZodError)
     return Response.json(
       {
-        error: "Invalid request fields",
+        error: `Invalid request fields: ${error.issues
+          .slice(0, 3)
+          .map((i) => `${i.path.join(".") || "request"} (${i.message})`)
+          .join("; ")}`,
         fields: error.issues.map((i) => ({
           path: i.path.join("."),
           message: i.message,

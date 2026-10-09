@@ -37,6 +37,8 @@ function BreakdownCard({
   icon = "globe",
   href,
   expanded = false,
+  valueLabel = "PAGEVIEWS",
+  showShare = true,
 }: {
   title: string;
   rows: Breakdown[];
@@ -44,6 +46,9 @@ function BreakdownCard({
   icon?: string;
   href: string;
   expanded?: boolean;
+  valueLabel?: string;
+  /** False when values are already percentages, so a share of the column total means nothing. */
+  showShare?: boolean;
 }) {
   const total = rows.reduce((n, r) => n + r.value, 0);
   return (
@@ -54,7 +59,7 @@ function BreakdownCard({
       </div>
       <div className="breakdown-subhead">
         <span>{title.toUpperCase()}</span>
-        <span>PAGEVIEWS</span>
+        <span>{valueLabel}</span>
       </div>
       {rows.length ? (
         (expanded ? rows : rows.slice(0, 6)).map((row) => (
@@ -75,10 +80,10 @@ function BreakdownCard({
               <span className="row-name">{row.name}</span>
             </span>
             <span className="breakdown-value">
-              {row.value.toLocaleString()}
-              <small>
+              {row.value.toLocaleString()}{showShare ? "" : "%"}
+              {showShare && <small>
                 {(total ? (row.value / total) * 100 : 0).toFixed(1)}%
-              </small>
+              </small>}
             </span>
           </button>
         ))
@@ -91,6 +96,47 @@ function BreakdownCard({
         Explore {title.toLowerCase()} →
       </Link>
     </section>
+  );
+}
+/** The one property that says what an automatic interaction was about. */
+function eventDetail(e: { name: string; properties?: Record<string, string | number | boolean> }) {
+  const p = e.properties || {};
+  const detail = { contact_click: p.method, outbound_click: p.host, file_download: p.file, form_submit: p.form, scroll_depth: p.depth === undefined ? undefined : `${p.depth}%`, engagement: p.seconds === undefined ? undefined : `${p.seconds}s` }[e.name];
+  return detail === undefined ? "" : String(detail);
+}
+function Interactions({ interactions, href }: { interactions: AnalyticsReport["interactions"]; href: string }) {
+  const { contact, outbound, downloads, forms, scroll, engagement } = interactions;
+  const any = contact.length || outbound.length || downloads.length || forms.length || scroll.length || engagement.pages;
+  if (!any)
+    return (
+      <section className="feature-card" style={{ marginTop: 20 }}>
+        <h3>Interactions</h3>
+        <p>
+          No automatic interactions in this period. Add <code>data-auto=&quot;all&quot;</code> to your tracking snippet to record contact clicks, outbound links, downloads, form submissions, scroll depth and engaged time.
+        </p>
+      </section>
+    );
+  const minutes = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`);
+  return (
+    <>
+      <div className="integration-intro" style={{ marginTop: 20 }}>
+        <div>
+          <h2>Interactions</h2>
+          <p>
+            {engagement.averageSeconds === null
+              ? "Engaged time appears once visitors leave a page."
+              : `${minutes(engagement.averageSeconds)} average engaged time across ${engagement.pages.toLocaleString()} page visits.`}
+          </p>
+        </div>
+      </div>
+      <div className="breakdown-grid">
+        {contact.length > 0 && <BreakdownCard title="Contact" rows={contact} valueLabel="CLICKS" href={href} icon="target" expanded />}
+        {outbound.length > 0 && <BreakdownCard title="Outbound links" rows={outbound} valueLabel="CLICKS" href={href} icon="external" />}
+        {downloads.length > 0 && <BreakdownCard title="Downloads" rows={downloads} valueLabel="DOWNLOADS" href={href} icon="layers" />}
+        {forms.length > 0 && <BreakdownCard title="Forms" rows={forms} valueLabel="SUBMISSIONS" href={href} icon="target" />}
+        {scroll.length > 0 && <BreakdownCard title="Scroll depth" rows={scroll} valueLabel="OF PAGEVIEWS" showShare={false} href={href} icon="layers" expanded />}
+      </div>
+    </>
   );
 }
 import { reportPath } from "@/lib/analytics/navigation";
@@ -502,7 +548,7 @@ export function ReportView({
                   : report.live
                 ).map((e) => (
                   <tr key={e.id}>
-                    <td>{e.name}</td>
+                    <td>{e.name}{eventDetail(e) && <span className="muted"> · {eventDetail(e)}</span>}</td>
                     <td>{e.path}</td>
                     <td>{e.source}</td>
                     <td>
@@ -517,6 +563,7 @@ export function ReportView({
           </div>
         </>
       )}
+      {view === "events" && <Interactions interactions={report.interactions} href={link("events")}/>}
       {view === "events" && (
         <section className="feature-card" style={{ marginTop: 20 }}>
           <h3>Your observed events</h3>
