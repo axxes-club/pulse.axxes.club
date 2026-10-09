@@ -71,13 +71,13 @@ export function getInstallationRecipe(
   const base = endpoint.origin;
   const src = `${base}/pulse.v1.js`,
     id = config.publicSiteId;
-  const html = `<script\n  src="${src}"\n  data-site="${id}"\n  data-environment="${config.environment}"\n  data-performance="true"\n  defer\n></script>`;
+  const html = `<script\n  src="${src}"\n  data-site="${id}"\n  data-environment="${config.environment}"\n  data-performance="true"\n  data-auto="all"\n  defer\n></script>`;
   if (platform === "next")
     return {
       file: "app/layout.tsx",
       instruction:
         "Add the hosted script to your root layout. Pulse tracks client-side navigation automatically.",
-      code: `import Script from 'next/script'\n\n// Inside your root layout's <body>:\n<Script\n  src="${src}"\n  data-site="${id}"\n  data-environment="${config.environment}"\n  data-performance="true"\n  strategy="afterInteractive"\n/>`,
+      code: `import Script from 'next/script'\n\n// Inside your root layout's <body>:\n<Script\n  src="${src}"\n  data-site="${id}"\n  data-environment="${config.environment}"\n  data-performance="true"\n  data-auto="all"\n  strategy="afterInteractive"\n/>`,
     };
   if (platform === "react")
     return {

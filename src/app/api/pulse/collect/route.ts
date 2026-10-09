@@ -7,8 +7,11 @@ import { AnalyticsError } from "@/lib/analytics/access";
 import { allowance } from "@/lib/billing/store";
 export async function POST(request: Request) {
   let allowedOrigin: string | null = null;
+  let siteId = "", eventOrigin = "";
   try {
     const batch = validateBatch(await readJson(request));
+    siteId = batch.siteId;
+    try { eventOrigin = new URL(batch.events.find((e) => e.url)?.url || "").origin; } catch {}
     const site = await findPublicSite(batch.siteId);
     if (!site) throw new AnalyticsError("Unknown or disabled app", 404);
     const origin = request.headers.get("origin");
@@ -38,6 +41,9 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     const response = errorResponse(e);
+    // Refusals are otherwise invisible to the site owner; record which check failed and against what.
+    if (response.status === 403 || response.status === 404)
+      console.warn("pulse_collect_refused", JSON.stringify({ status: response.status, reason: e instanceof Error ? e.message : "unknown", site: siteId, origin: request.headers.get("origin") || "", eventOrigin }));
     if (allowedOrigin)
       response.headers.set("Access-Control-Allow-Origin", allowedOrigin);
     response.headers.set("Vary", "Origin");

@@ -16,6 +16,31 @@ function breakdown(
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 }
+function byProperty(events: AnalyticsEvent[], name: string, label: (p: Record<string, string | number | boolean>) => string): Breakdown[] {
+  const result = new Map<string, number>();
+  for (const e of events)
+    if (e.name === name) {
+      const k = label(e.properties || {}) || "Unknown";
+      result.set(k, (result.get(k) || 0) + 1);
+    }
+  return [...result].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+}
+/** Automatic interactions from data-auto: what people clicked, downloaded and submitted, and how they read. */
+export function interactionSummary(events: AnalyticsEvent[], pageviews: number): AnalyticsReport["interactions"] {
+  const reached = (depth: number) => new Set(events.filter((e) => e.name === "scroll_depth" && Number(e.properties?.depth) >= depth).map((e) => `${e.session}|${e.path}`)).size;
+  const engaged = events.filter((e) => e.name === "engagement");
+  const totalSeconds = engaged.reduce((n, e) => n + Math.max(0, Math.min(1800, Number(e.properties?.seconds) || 0)), 0);
+  const engagedPages = new Set(engaged.map((e) => `${e.session}|${e.path}`)).size;
+  const scrollPages = reached(25);
+  return {
+    contact: byProperty(events, "contact_click", (p) => String(p.method || "")),
+    outbound: byProperty(events, "outbound_click", (p) => String(p.host || "")),
+    downloads: byProperty(events, "file_download", (p) => String(p.file || "")),
+    forms: byProperty(events, "form_submit", (p) => `${p.form || "form"}${p.kind === "search" ? " (search)" : ""}`),
+    scroll: scrollPages ? [25, 50, 75, 100].map((d) => ({ name: `${d}%`, value: Math.round((reached(d) / Math.max(pageviews, scrollPages)) * 100) })) : [],
+    engagement: { averageSeconds: engagedPages ? Math.round(totalSeconds / engagedPages) : null, pages: engagedPages },
+  };
+}
 export function filteredEvents(input:AnalyticsEvent[],query:ReportQuery){
   return attributeSessions([...new Map(input.map((e) => [e.id, e])).values()]).filter(
     (e) =>
@@ -128,8 +153,11 @@ export function summarizeEvents(
     pages: upAll(breakdown(pages, "path")),
     countries: upAll(breakdown(pages, "country")),
     devices: upAll(breakdown(pages, "device")),
+    interactions: (({ scroll, engagement, ...lists }) => ({
+      contact: upAll(lists.contact), outbound: upAll(lists.outbound), downloads: upAll(lists.downloads), forms: upAll(lists.forms), scroll, engagement,
+    }))(interactionSummary(events, pages.length)),
     events: upAll(breakdown(
-      events.filter((e) => e.name !== "pageview" && e.name !== "web_vital"),
+      events.filter((e) => e.name !== "pageview" && e.name !== "web_vital" && e.name !== "scroll_depth" && e.name !== "engagement"),
       "name",
     )),
     live: select(now.getTime()-300000,now.getTime()).sort((a,b)=>Date.parse(b.time)-Date.parse(a.time)).slice(0,100),
