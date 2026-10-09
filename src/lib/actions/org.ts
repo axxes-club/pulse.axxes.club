@@ -43,8 +43,7 @@ export async function switchOrganization(
         eq(schema.tenantMemberships.tenantId, tenantId),
         isNull(schema.tenantMemberships.deletedAt),
         isNull(schema.tenants.deletedAt),
-        ne(schema.tenants.status, "suspended"),
-        ne(schema.tenants.status, "cancelled"),
+        eq(schema.tenants.status, "active"),
       ),
     )
     .limit(1);

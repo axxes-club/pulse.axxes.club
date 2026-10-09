@@ -1,3 +1,4 @@
+import {admitWrite} from "@/lib/security/admission";
 import "server-only";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { z } from "zod";
@@ -49,6 +50,7 @@ export async function requireAnalyticsAccess(
   const site = result.rows[0];
   if (!site) throw new AnalyticsError("App not found", 404);
   authorizeSite({ tenantId: ctx.tenant.id, role: ctx.role }, site, action);
+  if (action === "manage") await admitWrite(ctx);
   return { site, ctx };
 }
 const createSchema = z
@@ -79,6 +81,7 @@ export async function createSite(input: unknown) {
       "An organization administrator must create this app",
       403,
     );
+  await admitWrite(ctx);
   const value = createSchema.parse(input);
   const collection = ["node", "http"].includes(value.platform)
     ? "server"

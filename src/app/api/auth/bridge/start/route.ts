@@ -1,8 +1,9 @@
+import {rateLimited} from "@/lib/security/admission";
 import { safePulseReturn } from "@/lib/auth-return";
 import { validTenantPreference } from "@/lib/analytics/session-bridge";
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const host =
     request.headers.get("x-forwarded-host") || request.headers.get("host");
   if (host !== "pulse.axxes.app")
@@ -30,3 +31,5 @@ export async function GET(request: Request) {
   response.headers.set("Referrer-Policy", "no-referrer");
   return response;
 }
+
+export const GET=rateLimited(handleGET,"bridge:start");

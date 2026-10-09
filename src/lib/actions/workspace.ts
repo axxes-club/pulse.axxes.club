@@ -1,4 +1,5 @@
 'use server';
+import {consumeAdmissions} from "@/lib/security/admission";
 import { cookies,headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { requestAuth } from '@/lib/auth';
@@ -13,6 +14,7 @@ export async function createPulseWorkspace(_previous:{error:string},form:FormDat
   if(typeof name!=='string'||!name.trim()||name.trim().length>100||/[\u0000-\u001f\u007f]/.test(name)) return {error:'Enter a workspace name between 1 and 100 characters.'};
   let workspace;
   try {
+    await consumeAdmissions([['global:workspace',100],['user:workspace:'+session.user.id,5]]);
     workspace=await ensurePulseWorkspace(session.user,name);
   } catch {
     return {error:'Your workspace could not be created. Please try again.'};

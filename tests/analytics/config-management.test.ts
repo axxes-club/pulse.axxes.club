@@ -1,3 +1,4 @@
+vi.mock('@/lib/security/admission',()=>({admitWrite:vi.fn().mockResolvedValue(undefined)}));
 import { beforeAll, afterAll, beforeEach, expect, it, vi } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';

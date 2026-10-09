@@ -1,3 +1,4 @@
+vi.mock('@/lib/security/admission',()=>({admitWrite:vi.fn().mockResolvedValue(undefined)}));
 import {afterEach,expect,it,vi} from 'vitest';
 const fixture=vi.hoisted(()=>({load:vi.fn(async()=>({events:[],sample:null as number|null})),site:{id:'site',tenantId:'tenant',publicId:'app_test',name:'Site',environment:'production',timezone:'UTC',identityMode:'ephemeral'}}));
 vi.mock('@/lib/context',()=>({requireContext:async()=>({tenant:{id:'tenant',name:'Tenant'},memberships:[],role:'owner'})}));

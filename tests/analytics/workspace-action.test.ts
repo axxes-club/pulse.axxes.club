@@ -1,3 +1,4 @@
+vi.mock('@/lib/security/admission',()=>({consumeAdmissions:vi.fn().mockResolvedValue(undefined)}));
 import { beforeEach,expect,it,vi } from 'vitest';
 const mocks=vi.hoisted(()=>({session:vi.fn(),create:vi.fn(),set:vi.fn(),redirect:vi.fn((path:string)=>{throw Error('redirect:'+path)})}));
 vi.mock('next/headers',()=>({headers:async()=>new Headers({'x-forwarded-proto':'https'}),cookies:async()=>({set:mocks.set})}));

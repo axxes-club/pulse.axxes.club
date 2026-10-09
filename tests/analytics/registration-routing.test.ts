@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest';
+vi.mock('@/lib/security/admission',()=>({rateLimited:(handler:any)=>handler}));
+import { expect, it, vi } from 'vitest';
 import { GET } from '@/app/api/auth/bridge/start/route';
 it('opens invite-free registration through the bridge and preserves the Pulse return', async () => {
   const response = await GET(new Request('https://pulse.axxes.app/api/auth/bridge/start?mode=signup', { headers: { host: 'pulse.axxes.app' } }));

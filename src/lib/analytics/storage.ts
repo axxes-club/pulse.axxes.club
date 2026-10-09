@@ -1,3 +1,4 @@
+import {consumeAdmissions} from "@/lib/security/admission";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import type { AnalyticsEvent, AnalyticsReport } from "./types";
@@ -46,6 +47,9 @@ export async function persistBatch(
     request.userAgent,
     rotation,
   );
+  if (!database) {
+    await consumeAdmissions([['global:collection',30000,60,batch.events.length],['tenant:collection:'+site.tenantId,12000,60,batch.events.length],['site:collection:'+site.id,6000,60,batch.events.length]]);
+  }
   const client = await (database || analyticsPool()).connect();
   let accepted = 0,
     refused = false;
@@ -53,7 +57,7 @@ export async function persistBatch(
     await client.query("begin");
     const minute = Math.floor(now.getTime() / 60000);
     const key = createHash("sha256")
-      .update(`${site.id}:${visitor}:${minute}`)
+      .update(`${site.id}:${request.ip}:${minute}`)
       .digest("hex");
     const rate = await client.query(
       "insert into pulse_rate_limits(key,count,expires_at) values($1,$2,now()+interval '2 minutes') on conflict(key) do update set count=pulse_rate_limits.count+excluded.count returning count",
