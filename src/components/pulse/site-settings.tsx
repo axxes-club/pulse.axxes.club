@@ -45,7 +45,7 @@ export function SiteSettings({siteId,canManage,demo}:{siteId?:string;canManage:b
   return <>
     <div className="workspace-title"><div><h1>App settings</h1><p>Control collection, reporting, and scoped server access.</p></div></div>
     {demo||!canManage ? <div className="empty-report"><h2>{demo?'Your app, your settings.':'Administrator access required'}</h2><p>{demo?'Sign in to manage a real app.':'Ask an organization owner or administrator to change collection settings.'}</p></div> : !siteId ? <p>Select an app to manage its settings.</p> : loadError ? <div className="empty-report"><p role="alert">{loadError}</p><button className="button secondary" onClick={()=>setRetry(value=>value+1)}>Retry settings</button></div> : data ? <>
-      <div className="integration-form">
+      <div className="integration-form settings-form">
         <label>App name<input value={data.site.name} onChange={event=>setData({...data,site:{...data.site,name:event.target.value}})}/></label>
         <label>Reporting timezone<input value={data.site.timezone} onChange={event=>setData({...data,site:{...data.site,timezone:event.target.value}})}/></label>
         <label>Collection<select value={String(data.site.enabled)} onChange={event=>setData({...data,site:{...data.site,enabled:event.target.value==='true'}})}><option value="true">Enabled</option><option value="false">Paused</option></select></label>
