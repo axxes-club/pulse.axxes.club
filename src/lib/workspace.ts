@@ -22,7 +22,7 @@ export async function ensurePulseWorkspace(
     const existing=await client.query<{id:string;name:string}>(
       `select t.id,t.name from tenant_memberships m join tenants t on t.id=m.tenant_id
        where m.user_id=$1 and m.deleted_at is null and t.deleted_at is null
-       and t.status='active'
+       and t.status not in ('suspended','cancelled')
        order by m.is_primary desc nulls last,t.name,t.id limit 1`,[user.id],
     );
     let workspace=existing.rows[0];
